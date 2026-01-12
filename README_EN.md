@@ -57,7 +57,7 @@ The core philosophy is **"Experience over Speed"**. We intentionally introduce d
 
 ```mermaid
 graph TD
-    User[User] -->|WebSocket Text| Backend_API[FastAPI Endpoint]
+    User[User] -->|"WebSocket Text"| Backend_API[FastAPI Endpoint]
     
     subgraph Backend_Services
         Backend_API --> Orchestrator
@@ -67,26 +67,27 @@ graph TD
         
         Orchestrator -->|Analyze| RoutingStrategy{Routing Strategy}
         
-        RoutingStrategy -->|Explicit/@| FastPath[Fast Path]
+        RoutingStrategy -->|"Explicit/@"| FastPath[Fast Path]
         RoutingStrategy -->|Ambiguous| SlowPath[Slow Path LLM]
         
-        FastPath & SlowPath --> Selected[Selected Agents List]
+        FastPath --> Selected[Selected Agents List]
+        SlowPath --> Selected
         
-        Selected -->|Async Task| AgentWorker[Agent Worker]
+        Selected -->|"Async Task"| AgentWorker[Agent Worker]
     end
     
     subgraph External_APIs
-        AgentWorker -->|Prompt + Context| QwenMax[Aliyun Qwen-Max]
-        SlowPath -->|History + Intent| QwenTurbo[Aliyun Qwen-Turbo]
+        AgentWorker -->|"Prompt + Context"| QwenMax[Aliyun Qwen-Max]
+        SlowPath -->|"History + Intent"| QwenTurbo[Aliyun Qwen-Turbo]
     end
     
     subgraph Output_Flow
         AgentWorker -->|Stream| OutputQueue[Asyncio Queue]
-        OutputQueue -->|Serial Consumption| WebSocketSender
-        WebSocketSender -->|JSON Stream| Frontend
+        OutputQueue -->|"Serial Consumption"| WebSocketSender
+        WebSocketSender -->|"JSON Stream"| Frontend
     end
 
-    Frontend -->|Buffer & Render| UI[Chat UI]
+    Frontend -->|"Buffer & Render"| UI[Chat UI]
 ```
 
 ### Directory Structure

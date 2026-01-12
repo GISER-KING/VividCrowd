@@ -69,30 +69,31 @@ graph TD
         Backend_API --> Orchestrator
         
         Orchestrator -->|Check| Guardrail[安全围栏服务]
-        Guardrail -- 拦截 --> Deflect[生成回避话术]
+        Guardrail -- "拦截" --> Deflect[生成回避话术]
         
         Orchestrator -->|Analyze| RoutingStrategy{路由策略}
         
-        RoutingStrategy -->|显式/@| FastPath[Fast Path]
-        RoutingStrategy -->|语义模糊| SlowPath[Slow Path LLM]
+        RoutingStrategy -->|"显式/@"| FastPath[Fast Path]
+        RoutingStrategy -->|"语义模糊"| SlowPath[Slow Path LLM]
         
-        FastPath & SlowPath --> Selected[入选 Agents]
+        FastPath --> Selected[入选 Agents]
+        SlowPath --> Selected
         
-        Selected -->|Async Task| AgentWorker[Agent 执行器]
+        Selected -->|"Async Task"| AgentWorker[Agent 执行器]
     end
     
     subgraph External_APIs
-        AgentWorker -->|Prompt + Context| QwenMax[阿里云 Qwen-Max]
-        SlowPath -->|History + Intent| QwenTurbo[阿里云 Qwen-Turbo]
+        AgentWorker -->|"Prompt + Context"| QwenMax[阿里云 Qwen-Max]
+        SlowPath -->|"History + Intent"| QwenTurbo[阿里云 Qwen-Turbo]
     end
     
     subgraph Output_Flow
         AgentWorker -->|Stream| OutputQueue[Asyncio Queue]
-        OutputQueue -->|串行消费| WebSocketSender
-        WebSocketSender -->|JSON Stream| Frontend
+        OutputQueue -->|"串行消费"| WebSocketSender
+        WebSocketSender -->|"JSON Stream"| Frontend
     end
 
-    Frontend -->|缓冲 & 渲染| UI[聊天界面]
+    Frontend -->|"缓冲 & 渲染"| UI[聊天界面]
 ```
 ### 目录结构
 
