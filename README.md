@@ -2,6 +2,8 @@
 
 > **基于 LLM 的高仿真沉浸式拟人群聊环境**
 
+https://github.com/user-attachments/assets/26936c51-f9d9-4590-896c-8e093f7a41ff
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-009688.svg)](https://fastapi.tiangolo.com/)
@@ -13,7 +15,7 @@
 
 与传统的“一问一答”机器人不同，本项目通过复杂的**编排算法**和**拟人化策略**，模拟了真实的社交直觉：群友们有自己的作息，懂得上文下达，会因为专业领域不同而主动接话或拒绝回答，甚至会在你输入时显示“对方正在输入...”，并像真人一样整段发送消息。
 
-https://github.com/GISER-KING/VividCrowd/issues/1
+
 
 ---
 

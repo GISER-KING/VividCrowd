@@ -2,6 +2,8 @@
 
 > **High-Fidelity Anthropomorphic Group Chat Environment Driven by LLM**
 
+https://github.com/user-attachments/assets/26936c51-f9d9-4590-896c-8e093f7a41ff
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-009688.svg)](https://fastapi.tiangolo.com/)
@@ -11,7 +13,7 @@
 
 Unlike traditional "Q&A" bots, this project simulates realistic social intuition through complex **orchestration algorithms** and **anthropomorphic strategies**: group members have their own schedules, understand context, proactively join or decline conversations based on their expertise, and even display "Typing..." states while sending messages in full sentences, just like real people.
 
-https://github.com/GISER-KING/VividCrowd/issues/1
+
 
 ---
 
