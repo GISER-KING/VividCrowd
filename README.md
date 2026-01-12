@@ -1,4 +1,4 @@
-# VividCrowd (Project Vivid)
+# VividCrowd
 
 > **基于 LLM 的高仿真沉浸式拟人群聊环境**
 
@@ -12,6 +12,8 @@
 **VividCrowd** 是一个致力于构建“活”的群聊环境的开源项目。在这里，你是唯一的真人，其余群友均为由 **Qwen-Max** 大模型驱动的 AI Agent。
 
 与传统的“一问一答”机器人不同，本项目通过复杂的**编排算法**和**拟人化策略**，模拟了真实的社交直觉：群友们有自己的作息，懂得上文下达，会因为专业领域不同而主动接话或拒绝回答，甚至会在你输入时显示“对方正在输入...”，并像真人一样整段发送消息。
+
+https://github.com/GISER-KING/VividCrowd/issues/1
 
 ---
 
@@ -64,29 +66,29 @@
 ```mermaid
 graph TD
     User[用户] -->|WebSocket| Backend_API[FastAPI Endpoint]
-    
+
     subgraph Backend_Services
         Backend_API --> Orchestrator
-        
+
         Orchestrator -->|Check| Guardrail[安全围栏服务]
         Guardrail -- "拦截" --> Deflect[生成回避话术]
-        
+
         Orchestrator -->|Analyze| RoutingStrategy{路由策略}
-        
+
         RoutingStrategy -->|"显式/@"| FastPath[Fast Path]
         RoutingStrategy -->|"语义模糊"| SlowPath[Slow Path LLM]
-        
+
         FastPath --> Selected[入选 Agents]
         SlowPath --> Selected
-        
+
         Selected -->|"Async Task"| AgentWorker[Agent 执行器]
     end
-    
+
     subgraph External_APIs
         AgentWorker -->|"Prompt + Context"| QwenMax[阿里云 Qwen-Max]
         SlowPath -->|"History + Intent"| QwenTurbo[阿里云 Qwen-Turbo]
     end
-    
+
     subgraph Output_Flow
         AgentWorker -->|Stream| OutputQueue[Asyncio Queue]
         OutputQueue -->|"串行消费"| WebSocketSender
@@ -95,6 +97,7 @@ graph TD
 
     Frontend -->|"缓冲 & 渲染"| UI[聊天界面]
 ```
+
 ### 目录结构
 
 ```bash

@@ -78,44 +78,53 @@ class Agent:
             f"请简短回复（20字以内），完全符合你的人设语气，不要重复名字："
         )
 
-        try:
-            logger.info(f"Agent {self.profile.name} calling Dashscope API...")
-            if not settings.DASHSCOPE_API_KEY:
-                logger.error("DASHSCOPE_API_KEY is not set in environment!")
-                yield "[配置错误：API Key 缺失]"
-                return
+        # 重试机制：最多重试 1 次
+        max_retries = 1
+        for attempt in range(max_retries + 1):
+            try:
+                logger.info(f"Agent {self.profile.name} calling Dashscope API (Attempt {attempt + 1})...")
+                if not settings.DASHSCOPE_API_KEY:
+                    logger.error("DASHSCOPE_API_KEY is not set in environment!")
+                    yield "[配置错误：API Key 缺失]"
+                    return
 
-            # 使用全量流式模式，手动计算增量，兼容性更好
-            responses = Generation.call(
-                model=settings.MODEL_NAME,
-                prompt=full_prompt,
-                api_key=settings.DASHSCOPE_API_KEY,
-                temperature=0.7,
-                max_tokens=100,
-                stream=True,
-                # incremental_output=True, # 暂时注释掉，排查问题
-                result_format='message'
-            )
-            
-            last_len = 0
-            for response in responses:
-                if response.status_code == 200:
-                    full_content = response.output.choices[0].message.content
-                    if full_content:
-                        # 计算增量
-                        chunk = full_content[last_len:]
-                        if chunk:
-                            logger.info(f"Agent {self.profile.name} chunk: {chunk}")
-                            yield chunk
-                            last_len = len(full_content)
-                    await asyncio.sleep(0.01)
+                # 使用全量流式模式，手动计算增量，兼容性更好
+                responses = Generation.call(
+                    model=settings.MODEL_NAME,
+                    prompt=full_prompt,
+                    api_key=settings.DASHSCOPE_API_KEY,
+                    temperature=0.7,
+                    max_tokens=100,
+                    stream=True,
+                    result_format='message'
+                )
+                
+                last_len = 0
+                for response in responses:
+                    if response.status_code == 200:
+                        full_content = response.output.choices[0].message.content
+                        if full_content:
+                            # 计算增量
+                            chunk = full_content[last_len:]
+                            if chunk:
+                                logger.info(f"Agent {self.profile.name} chunk: {chunk}")
+                                yield chunk
+                                last_len = len(full_content)
+                        await asyncio.sleep(0.01)
+                    else:
+                        logger.error(f"Dashscope Error: {response.code} - {response.message}")
+                        yield f"[Error: {response.message}]"
+                        # API 报错（如 400/401）通常不需要重试，直接 break
+                        return 
+                
+                logger.info(f"Agent {self.profile.name} generation finished.")
+                break # 成功执行完则退出重试循环
+                        
+            except Exception as e:
+                logger.error(f"Agent {self.profile.name} generation error (Attempt {attempt + 1}): {e}")
+                if attempt < max_retries:
+                    logger.info("Retrying...")
+                    await asyncio.sleep(0.5) # 稍作等待
+                    continue
                 else:
-                    logger.error(f"Dashscope Error: {response.code} - {response.message}")
-                    yield f"[Error: {response.message}]"
-                    break
-            
-            logger.info(f"Agent {self.profile.name} generation finished.")
-                    
-        except Exception as e:
-            logger.error(f"Agent {self.profile.name} generation error: {e}")
-            yield "..."
+                    yield "..."

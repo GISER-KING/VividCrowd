@@ -59,37 +59,53 @@ class RouterService:
 
         prompt = self._build_routing_prompt(user_msg, agents, history)
         
-        try:
-            # 使用 run_in_executor 避免阻塞主线程
-            # 这里简化直接调用，因为 Dashscope http request 耗时主要在网络
-            # 生产环境建议包装在 executor 中
-            response = Generation.call(
-                model=self.model_name,
-                prompt=prompt,
-                api_key=settings.DASHSCOPE_API_KEY,
-                result_format='message',
-                temperature=0.1  # 低温度，保证决策稳定性
-            )
-            
-            if response.status_code == 200:
-                content = response.output.choices[0].message.content
-                # 清洗可能的 markdown 标记
-                content = content.replace("```json", "").replace("```", "").strip()
+        max_retries = 1
+        for attempt in range(max_retries + 1):
+            try:
+                # 使用 run_in_executor 避免阻塞主线程
+                # 这里简化直接调用，因为 Dashscope http request 耗时主要在网络
+                # 生产环境建议包装在 executor 中
+                response = Generation.call(
+                    model=self.model_name,
+                    prompt=prompt,
+                    api_key=settings.DASHSCOPE_API_KEY,
+                    result_format='message',
+                    temperature=0.1  # 低温度，保证决策稳定性
+                )
                 
-                try:
-                    selected_ids = json.loads(content)
-                    if isinstance(selected_ids, list):
-                        # 过滤掉不存在的 ID
-                        valid_ids = [aid for aid in selected_ids if aid in agents]
-                        logger.info(f"LLM Router selected: {valid_ids}")
-                        return valid_ids
-                except json.JSONDecodeError:
-                    logger.warning(f"Router returned invalid JSON: {content}")
-            else:
-                logger.error(f"Router API failed: {response.code} - {response.message}")
-                
-        except Exception as e:
-            logger.error(f"Router exception: {e}")
+                if response.status_code == 200:
+                    content = response.output.choices[0].message.content
+                    # 清洗可能的 markdown 标记
+                    content = content.replace("```json", "").replace("```", "").strip()
+                    
+                    try:
+                        selected_ids = json.loads(content)
+                        if isinstance(selected_ids, list):
+                            # 过滤掉不存在的 ID
+                            valid_ids = [aid for aid in selected_ids if aid in agents]
+                            logger.info(f"LLM Router selected: {valid_ids}")
+                            return valid_ids
+                    except json.JSONDecodeError:
+                        logger.warning(f"Router returned invalid JSON: {content}")
+                        # JSON 解析失败属于模型问题，重试可能也没用，但也试一下吧
+                else:
+                    logger.error(f"Router API failed: {response.code} - {response.message}")
+                    
+                # 如果成功拿到 response 但 status_code!=200 或者解析失败，进入下一次重试
+                if attempt < max_retries:
+                    logger.warning(f"Router retrying (Attempt {attempt + 1})...")
+                    continue
+
+            except Exception as e:
+                logger.error(f"Router exception (Attempt {attempt + 1}): {e}")
+                if attempt < max_retries:
+                    logger.warning("Router connection failed, retrying...")
+                    # 简单的同步 sleep 可能会阻塞，但在 async 函数里最好不要 block loop
+                    # 不过这里没用 await sleep，而是直接 continue，下次调用 Generation.call 会再次阻塞
+                    # 生产环境最好改成 await asyncio.sleep(0.5)
+                    import asyncio
+                    await asyncio.sleep(0.5)
+                    continue
             
         return []
 
