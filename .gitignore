@@ -53,10 +53,7 @@ uploads/
 backend/uploads/
 
 # Data files
-backend/data/
 
 # Windows
 nul
 
-# Docs (if auto-generated)
-backend/docs/
