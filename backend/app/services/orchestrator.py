@@ -4,10 +4,10 @@ import random
 import datetime
 from typing import List, AsyncGenerator, Dict
 from loguru import logger
-from app.services.agent import Agent
-from app.services.guardrail import guardrail_service
-from app.services.router import router_service
-from app.core.config import settings
+from backend.app.services.agent import Agent
+from backend.app.services.guardrail import guardrail_service
+from backend.app.services.router import router_service
+from backend.app.core.config import settings
 
 class OrchestratorService:
     def __init__(self):

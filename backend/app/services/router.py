@@ -2,8 +2,8 @@ import json
 from typing import List, Dict
 from dashscope import Generation
 from loguru import logger
-from app.core.config import settings
-from app.services.agent import Agent
+from backend.app.core.config import settings
+from backend.app.services.agent import Agent
 
 class RouterService:
     def __init__(self):

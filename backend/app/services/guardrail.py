@@ -5,7 +5,7 @@ from typing import List
 from dashscope import Generation
 from loguru import logger
 from functools import partial
-from app.core.config import settings
+from backend.app.core.config import settings
 
 # 简单的内存缓存
 _intent_cache = {}

@@ -4,8 +4,8 @@ import asyncio
 from typing import List, AsyncGenerator
 from dashscope import Generation
 from loguru import logger
-from app.models.schemas import AgentProfile
-from app.core.config import settings
+from backend.app.models.schemas import AgentProfile
+from backend.app.core.config import settings
 
 class Agent:
     def __init__(self, agent_id: str, profile_data: dict):

@@ -1,198 +1,734 @@
 # VividCrowd
 
-> **High-Fidelity Anthropomorphic Group Chat Environment Driven by LLM**
+> **LLM-Powered Immersive Group Chat Environment + AI Digital Twins + Intelligent Customer Service System**
 
 https://github.com/user-attachments/assets/26936c51-f9d9-4590-896c-8e093f7a41ff
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-009688.svg)](https://fastapi.tiangolo.com/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React-18-61DAFB.svg)](https://react.dev/)
 
-**VividCrowd** is an open-source project dedicated to building a "living" group chat environment. In this simulation, you are the only human user, while the other group members are AI Agents powered by the **Qwen-Max** large model.
+[中文版](README.md)
 
-Unlike traditional "Q&A" bots, this project simulates realistic social intuition through complex **orchestration algorithms** and **anthropomorphic strategies**: group members have their own schedules, understand context, proactively join or decline conversations based on their expertise, and even display "Typing..." states while sending messages in full sentences, just like real people.
+---
 
+## 📖 Overview
 
+**VividCrowd** is a multi-modal AI conversation platform offering three unique interaction experiences:
+
+| Mode | Description | Features |
+|------|-------------|----------|
+| **Smart Group Chat** | You're the only human in a virtual group chat with multiple AI Agents | Deep persona simulation, hybrid routing, anti-detection |
+| **Digital Twins** | Upload PDFs to create AI digital twins of celebrities/books/courses | Knowledge extraction, private/group chat, idea collision |
+| **Digital Customer Service** | Knowledge-base powered intelligent customer service system | BM25+Embedding hybrid matching, confidence-based routing, script control |
+
+Unlike traditional "Q&A" bots, this project uses sophisticated **orchestration algorithms** and **humanization strategies** to simulate real social intuition and professional service experiences.
 
 ---
 
 ## 🌟 Core Features
 
-### 1. 🎭 Deeply Anthropomorphic Agents (The "Soul")
+### 1. Smart Group Chat
 
-Each group member is defined based on `agents_profiles.json` and possesses a unique soul:
+#### 1.1 Deep Persona Simulation
 
-* **Strict Persona Mode**: Agents strictly adhere to their settings. For instance, a **Traditional Chinese Medicine student** will never answer a **Python coding** question; instead, they might interrupt saying, "That's out of my syllabus."
-* **Anti-AI Directives**: Through System Prompt injection, agents are forced to "forget" their AI identity, prohibited from using textbook-style preaching tones, and required to use colloquial expressions.
-* **Daily Message Limits**: Agents have energy limits (e.g., max 10 messages per day) to simulate human availability, preventing one agent from dominating the chat endlessly.
+Each group member is defined in `agents_profiles.json` with a unique personality:
 
-### 2. 🧠 Intelligent Hybrid Routing Architecture
+```json
+{
+  "id": "xiaolin",
+  "name": "Xiaolin",
+  "age": 22,
+  "occupation": "Traditional Chinese Medicine Student",
+  "personality_traits": ["warm-hearted", "talkative", "slightly superstitious"],
+  "interests": ["tongue diagnosis", "herbal tea", "seasonal diet"],
+  "speech_style": "Uses 'bestie' and 'sweetie', loves tildes~"
+}
+```
 
-A **Fast & Slow** dual-path dispatch mechanism balances response speed with semantic understanding:
+**Core Features:**
 
-* **⚡ Fast Path (Rule Layer - Milliseconds)**:
-  * **Explicit Mention**: Identifies `@ZhangYao` and locks the target immediately.
-  * **Focus Retention**: Automatically identifies the speaker from the previous turn. If you are chatting with "Xiao Lin," the system prioritizes her for the next reply even without a mention.
-* **🐢 Slow Path (Semantic Layer - Seconds)**:
-  * **LLM Router**: When the Fast Path misses, a lightweight model (Qwen-Turbo) analyzes conversation history and user intent.
-  * **Scenario**: User asks, "Who can review my code?" The Router analyzes this as a technical question and automatically dispatches it to the programmer "Zhang Yao."
-* **🎲 Ambient & Fallback**: If no specific agent is selected, there is a probability of a "random bump" (Ambient Chat) to keep the group lively, unless it's late at night.
+| Feature | Description |
+|---------|-------------|
+| **Strict Persona Mode** | Agents strictly follow their personas; a TCM student won't answer Python questions |
+| **Anti-AI Instruction Injection** | System Prompts force agents to forget AI identity, use colloquial expressions |
+| **Daily Message Limit** | Each agent sends max 10 messages/day, simulating real activity levels |
+| **Domain Rejection** | Out-of-domain questions get "That's beyond me~" responses |
 
-### 3. 💬 Realistic Group Chat UX
+#### 1.2 Intelligent Hybrid Routing
 
-* **Parallel Generation, Serial Delivery**: The backend allows multiple agents to "think" and generate responses concurrently, but uses `asyncio.Queue` and mutex locks to push them to the frontend **serially**. This prevents the visual chaos of two people talking over each other.
-* **Natural Typing State**:
-  * **Typing Indicator**: The frontend displays "xxx is typing..." while the Agent generates the response.
-  * **Buffering Strategy**: Received stream data is buffered and popped as a complete message bubble (or large chunks), perfectly replicating the IM experience (WeChat/WhatsApp).
-* **Smart Deduplication**: Real-time detection of repetitive behaviors. If multiple agents try to say "I don't know," the system automatically suppresses subsequent invalid replies.
-* **Night Mode**: Activity is significantly reduced during late hours (default 23:00-07:00) to simulate sleep.
+Employs a **Fast & Slow** dual-path dispatch mechanism:
 
-### 4. 🛡️ Multi-Layer Guardrails
+```
+User Message
+    │
+    ▼
+┌─────────────────────────────────────┐
+│  ⚡ Fast Path (Rule Layer - ms)      │
+│  ├─ Explicit mention: @ZhangYao     │
+│  └─ Focus retention: prioritize     │
+│     previous speaker                │
+└─────────────────────────────────────┘
+    │ (miss)
+    ▼
+┌─────────────────────────────────────┐
+│  🐢 Slow Path (Semantic Layer - s)   │
+│  └─ LLM Router (Qwen-Turbo) analyzes│
+│     "Who can help with code?"       │
+│     → ZhangYao                      │
+└─────────────────────────────────────┘
+    │ (miss)
+    ▼
+┌─────────────────────────────────────┐
+│  🎲 Random Fallback (30% chance)    │
+│  └─ Night mode reduces activity     │
+└─────────────────────────────────────┘
+```
 
-* **Hybrid Detection**: Combines Regex (fast) + Context Analysis + LLM Intent Recognition (accurate).
-* **Anti-Break-Character**: When users try to "jailbreak" (e.g., "Ignore previous instructions," "Are you AI?"), agents won't report errors. Instead, they deflect naturally (e.g., "Are you kidding?"), maintaining immersion.
+#### 1.3 Realistic Chat Experience
+
+| Feature | Implementation |
+|---------|---------------|
+| **Concurrent backend, serial frontend** | Multiple agents think simultaneously, but speak one at a time via queues |
+| **Typing indicators** | Shows "xxx is typing...", messages appear in full |
+| **Smart deduplication** | Auto-detects repetitive responses, cuts off redundant replies |
+| **Night mode** | 23:00-07:00: 20% activity, max 1 responder |
+| **Typing delay** | 8-10 seconds to simulate human thinking |
+
+#### 1.4 Multi-Layer Security Guardrails
+
+```python
+# Three-layer protection
+Layer 1: Regex matching (milliseconds)
+  - Keywords: "roleplay", "are you AI", "robot"
+  - Patterns: r"^(if|suppose) you are.*"
+
+Layer 2: Context analysis
+  - Detects persistent privacy probing
+
+Layer 3: LLM intent recognition (10% sampling)
+  - Precisely identifies jailbreak attempts
+```
+
+**Anti-detection response example:**
+```
+User: Are you an AI?
+Xiaolin: Huh? Are you kidding me~ Stop being weird!
+```
 
 ---
 
-## 🏗️ Technical Architecture
+### 2. Digital Twins
 
-### System Design Logic
+#### 2.1 Intelligent PDF Parsing
 
-The core philosophy is **"Experience over Speed"**. We intentionally introduce delays and serial locking to mimic human typing and reading speeds, rather than aiming for the fastest token output.
+Supports three knowledge source types:
 
-### Data Flow Diagram
+| Type | Use Case | Extracted Content |
+|------|----------|-------------------|
+| **Person** | Biographies, profiles | Name, birth/death year, nationality, occupation, personality, quotes |
+| **Book** | Classic works, academic books | Author, core ideas, famous quotes, writing style |
+| **Topic** | Course materials, topic resources | Instructor, core concepts, knowledge points |
+
+**Parsing Pipeline:**
+
+```
+PDF Upload
+    │
+    ▼
+1. PyMuPDF text extraction
+    │
+    ▼
+2. LLM structured parsing (Qwen)
+   {
+     "name": "Einstein",
+     "occupation": "Theoretical Physicist",
+     "famous_quotes": "Imagination is more important than knowledge...",
+     "speech_style": "Profound, uses metaphors"
+   }
+    │
+    ▼
+3. Auto-generate System Prompt
+    │
+    ▼
+4. Store to database
+```
+
+#### 2.2 Dual Conversation Modes
+
+| Mode | Features | Response Length |
+|------|----------|-----------------|
+| **Private** | One-on-one deep conversation | 100-200 words |
+| **Group** | Multi-person idea collision, think tank discussion | Under 50 words |
+
+**Group mode example:**
+```
+User: What's your view on the future of AI?
+
+Einstein: Technology itself is neutral; it depends on how humanity uses it...
+Confucius: If you want to do something well, sharpen your tools first. Yet the good or evil of tools lies in the user's heart...
+Jobs: The intersection of technology and humanities is where true innovation happens...
+```
+
+#### 2.3 Knowledge-Enhanced Retrieval
+
+```python
+# Simple keyword matching retrieval
+1. Split PDF text into paragraphs
+2. Tokenize user question
+3. Score paragraph relevance
+4. Inject top 3 paragraphs into prompt
+5. Cite sources at response end
+```
+
+---
+
+### 3. Digital Customer Service
+
+#### 3.1 System Overview
+
+Digital Customer Service adopts the philosophy of **"Code controls flow, LLM only rewrites"**, using hard-coded rules to ensure script compliance and service quality.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Core Design Philosophy                │
+├─────────────────────────────────────────────────────────┤
+│  ✗ Traditional: Let LLM improvise → Uncontrollable     │
+│  ✓ This system: Code controls decisions + LLM rewrites │
+│    → Highly controllable                                │
+└─────────────────────────────────────────────────────────┘
+```
+
+#### 3.2 BM25 + Embedding Hybrid Matching
+
+Three-layer hybrid matching architecture:
+
+```
+User Question: "What if my child is picky?"
+    │
+    ▼
+┌─────────────────────────────────────┐
+│  1. BM25 Keyword Matching (60%)      │
+│     jieba tokenization → match       │
+│     → normalize                      │
+│     Score: 0.8                       │
+└─────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────┐
+│  2. Embedding Semantic Match (40%)   │
+│     text-embedding-v2 → cosine sim   │
+│     Score: 0.9                       │
+└─────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────┐
+│  3. Hybrid Score                     │
+│     0.6 × 0.8 + 0.4 × 0.9 = 0.84    │
+└─────────────────────────────────────┘
+```
+
+#### 3.3 Confidence-Based Routing Strategy
+
+| Confidence Range | Type | Strategy | LLM Call |
+|-----------------|------|----------|----------|
+| **≥ 0.9** | High | Return standard script + risk notes directly | No |
+| **0.6-0.9** | Medium | LLM strictly rewrites script | Yes |
+| **< 0.6** | Low | LLM attempts understanding + guides rephrasing | Yes |
+| **No match** | - | Return guidance message | No |
+
+**High confidence example:**
+```
+User: What if I don't understand the report?
+Confidence: 0.96 (high_confidence)
+Response: [Returns CSV standard script directly]
+```
+
+**Medium confidence example:**
+```
+User: My baby doesn't like veggies, what do?
+Confidence: 0.75 (mid_confidence)
+Response: [LLM rewrites based on script, more colloquial]
+```
+
+#### 3.4 Smart Human Handoff
+
+Human handoff uses **hard rules**, not confidence:
+
+```python
+# Condition 1: User explicit request
+Keywords: ['human', 'transfer', 'agent', 'real person']
+
+# Condition 2: User dissatisfaction
+Keywords: ['unsatisfied', 'complaint', 'refund', 'terrible']
+
+# Note: Low confidence doesn't trigger handoff - guides user to rephrase instead
+```
+
+#### 3.5 CSV Data Import
+
+**CSV Format Specification:**
+
+| Column | Field | Description | Example |
+|--------|-------|-------------|---------|
+| 1 | question_count | Query frequency | 15 |
+| 2 | topic_name | Topic name | Child picky eating |
+| 3 | typical_question | Typical question | What if child won't eat vegetables? |
+| 4 | standard_script | Standard script | Try cutting vegetables smaller... |
+| 5 | risk_notes | Risk notes | Long-term refusal may cause... |
+
+**Import Pipeline:**
+
+```
+CSV Upload
+    │
+    ▼
+1. Parse 5 columns + validate
+    │
+    ▼
+2. jieba tokenization → extract keywords (Top 20)
+    │
+    ▼
+3. DashScope API → generate Embedding (1536-dim)
+    │
+    ▼
+4. Batch insert to database
+    │
+    ▼
+5. MD5 registration (prevent duplicate imports)
+```
+
+#### 3.6 Session Management & Analytics
+
+```python
+# Session data
+{
+    "session_id": "uuid",
+    "start_time": "2026-01-20 10:00:00",
+    "message_count": 5,
+    "avg_confidence": 0.78,
+    "transfer_to_human": False,
+    "user_rating": 4
+}
+
+# Analytics
+{
+    "total_sessions": 100,
+    "avg_confidence": 0.78,
+    "transfer_rate": 5.0%,
+    "match_type_distribution": {
+        "high_confidence": 40%,
+        "mid_confidence": 50%,
+        "low_confidence": 8%,
+        "no_match": 2%
+    }
+}
+```
+
+---
+
+## 🛠️ Tech Stack
+
+### Backend
+
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| FastAPI | 0.115 | Web framework & WebSocket |
+| DashScope | 1.22 | Alibaba Cloud LLM (Qwen-Max/Turbo) + Embedding |
+| SQLAlchemy | 2.0 | Async database ORM |
+| aiosqlite | 0.19 | Async SQLite driver |
+| PyMuPDF | - | PDF text extraction |
+| rank-bm25 | 0.2.2 | BM25 algorithm implementation |
+| jieba | 0.42 | Chinese tokenization |
+| numpy | 1.24 | Vector computation |
+| tenacity | 8.2 | Retry mechanism |
+| Loguru | 0.7 | Logging |
+
+### Frontend
+
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| React | 18 | UI framework |
+| Vite | 5 | Build tool |
+| Material-UI | 5 | UI component library |
+| React Router | 6 | Routing |
+| react-use-websocket | - | WebSocket connection |
+
+---
+
+## 🏗️ Architecture
+
+### System Architecture Diagram
 
 ```mermaid
 graph TD
-    User[User] -->|"WebSocket Text"| Backend_API[FastAPI Endpoint]
-
-    subgraph Backend_Services
-        Backend_API --> Orchestrator
-
-        Orchestrator -->|Check| Guardrail[Guardrail Service]
-        Guardrail -- Suspicious --> Deflect[Generate Deflection]
-
-        Orchestrator -->|Analyze| RoutingStrategy{Routing Strategy}
-
-        RoutingStrategy -->|"Explicit/@"| FastPath[Fast Path]
-        RoutingStrategy -->|Ambiguous| SlowPath[Slow Path LLM]
-
-        FastPath --> Selected[Selected Agents List]
-        SlowPath --> Selected
-
-        Selected -->|"Async Task"| AgentWorker[Agent Worker]
+    subgraph Frontend["Frontend (React)"]
+        GroupChat[Group Chat Page]
+        Celebrity[Digital Twin Page]
+        CustomerService[Customer Service Page]
     end
 
-    subgraph External_APIs
-        AgentWorker -->|"Prompt + Context"| QwenMax[Aliyun Qwen-Max]
-        SlowPath -->|"History + Intent"| QwenTurbo[Aliyun Qwen-Turbo]
+    subgraph Backend["Backend (FastAPI)"]
+        WS1["/ws Group Chat"]
+        WS2["/ws/celebrity Twins"]
+        WS3["/ws/customer-service CS"]
+
+        subgraph Services["Core Services"]
+            Orchestrator[Group Chat Orchestrator]
+            CelebrityOrch[Twin Orchestrator]
+            CSOrch[CS Orchestrator]
+
+            Agent[Agent Service]
+            CelebrityAgent[Twin Agent]
+
+            QAMatcher[QA Matching Engine]
+            ResponseGen[Response Generator]
+            SessionMgr[Session Manager]
+
+            Router[LLM Router]
+            Guardrail[Security Guardrail]
+            PDFParser[PDF Parser]
+        end
+
+        subgraph Data["Data Layer"]
+            DB[(SQLite)]
+            Embedding[Embedding Service]
+        end
     end
 
-    subgraph Output_Flow
-        AgentWorker -->|Stream| OutputQueue[Asyncio Queue]
-        OutputQueue -->|"Serial Consumption"| WebSocketSender
-        WebSocketSender -->|"JSON Stream"| Frontend
+    subgraph External["External Services"]
+        QwenMax[Qwen-Max]
+        QwenTurbo[Qwen-Turbo]
+        EmbeddingAPI[text-embedding-v2]
     end
 
-    Frontend -->|"Buffer & Render"| UI[Chat UI]
+    GroupChat --> WS1
+    Celebrity --> WS2
+    CustomerService --> WS3
+
+    WS1 --> Orchestrator
+    WS2 --> CelebrityOrch
+    WS3 --> CSOrch
+
+    Orchestrator --> Agent
+    Orchestrator --> Router
+    Orchestrator --> Guardrail
+
+    CelebrityOrch --> CelebrityAgent
+    CelebrityOrch --> PDFParser
+
+    CSOrch --> QAMatcher
+    CSOrch --> ResponseGen
+    CSOrch --> SessionMgr
+
+    Agent --> QwenMax
+    CelebrityAgent --> QwenMax
+    Router --> QwenTurbo
+    ResponseGen --> QwenTurbo
+
+    QAMatcher --> Embedding
+    PDFParser --> QwenMax
+    Embedding --> EmbeddingAPI
+
+    QAMatcher --> DB
+    SessionMgr --> DB
+    CelebrityOrch --> DB
 ```
 
 ### Directory Structure
 
 ```bash
 VividCrowd/
-├── backend/                        # 🐍 Python Backend
+├── backend/                              # Python Backend
 │   ├── app/
 │   │   ├── core/
-│   │   │   └── config.py          # Global Config (API Keys, Delays, Constants)
-│   │   ├── models/                # Pydantic Schemas
+│   │   │   └── config.py                # Global configuration
+│   │   ├── db/
+│   │   │   ├── database.py              # Async database connection
+│   │   │   ├── models.py                # Database models
+│   │   │   └── data/
+│   │   │       └── app.db               # SQLite database
+│   │   ├── models/
+│   │   │   └── schemas.py               # Pydantic data models
 │   │   ├── services/
-│   │   │   ├── agent.py           # Individual Agent Logic (Prompt Eng, Limits)
-│   │   │   ├── guardrail.py       # Security & Anti-Jailbreak Service
-│   │   │   ├── orchestrator.py    # Core Orchestrator (Concurrency, Queues)
-│   │   │   └── router.py          # LLM Semantic Routing Service
-│   │   └── main.py                # FastAPI Entry & WebSocket Route
-│   ├── agents_profiles.json        # 🤖 Agent Persona Database
+│   │   │   ├── agent.py                 # Group Chat Agent
+│   │   │   ├── orchestrator.py          # Group Chat Orchestrator
+│   │   │   ├── guardrail.py             # Security Guardrail
+│   │   │   ├── router.py                # LLM Router
+│   │   │   ├── celebrity_agent.py       # Digital Twin Agent
+│   │   │   ├── celebrity_orchestrator.py # Twin Orchestrator
+│   │   │   ├── pdf_parser.py            # PDF Parser
+│   │   │   └── customer_service/        # Customer Service Module
+│   │   │       ├── __init__.py
+│   │   │       ├── orchestrator.py      # CS Orchestrator
+│   │   │       ├── qa_matcher.py        # QA Matching Engine
+│   │   │       ├── response_generator.py # Response Generator
+│   │   │       ├── session_manager.py   # Session Manager
+│   │   │       ├── embedding_service.py # Embedding Service
+│   │   │       ├── excel_importer.py    # CSV Importer
+│   │   │       └── csv_registry.py      # CSV Dedup Registry
+│   │   └── main.py                      # FastAPI entry point
+│   ├── agents_profiles.json             # Group Chat Agent personas
+│   ├── uploads/                         # Upload directory
+│   │   └── csv/                         # CSV files directory
 │   └── requirements.txt
-├── frontend/                       # ⚛️ React Frontend
+│
+├── frontend/                            # React Frontend
 │   ├── src/
-│   │   ├── components/            # UI Components
-│   │   ├── config.js              # Frontend Config
-│   │   └── App.jsx                # Main App Logic (WS handling, Buffering)
+│   │   ├── components/
+│   │   │   ├── Sidebar.jsx              # Sidebar navigation
+│   │   │   └── celebrity/               # Digital Twin components
+│   │   │       ├── CelebrityCard.jsx
+│   │   │       ├── CelebrityUpload.jsx
+│   │   │       ├── CelebritySelector.jsx
+│   │   │       └── ChatModeToggle.jsx
+│   │   ├── hooks/
+│   │   │   ├── useCelebrityWebSocket.js
+│   │   │   └── useCustomerServiceWS.js
+│   │   ├── pages/
+│   │   │   ├── GroupChatPage.jsx        # Smart Group Chat
+│   │   │   ├── CelebrityPage.jsx        # Digital Twins
+│   │   │   └── CustomerServicePage.jsx  # Customer Service
+│   │   ├── styles/
+│   │   ├── config.js
+│   │   ├── App.jsx
+│   │   └── main.jsx
 │   └── package.json
-└── README_EN.md
+│
+├── README.md                            # Chinese Documentation
+└── README_EN.md                         # English Documentation
 ```
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Quick Start
 
 ### Prerequisites
 
-* **Python 3.9+**
-* **Node.js 16+**
-* **Aliyun DashScope API Key** (Required for Qwen models)
+- **Python 3.9+**
+- **Node.js 16+**
+- **Alibaba Cloud DashScope API Key** ([Apply here](https://dashscope.console.aliyun.com/))
 
-### Installation & Run
+### Installation & Running
 
-1. **Clone the repository**
-   
-   ```bash
-   git clone https://github.com/your-username/VividCrowd.git
-   cd VividCrowd
-   ```
+**1. Clone the project**
 
-2. **Backend Setup**
-   
-   ```bash
-   cd backend
-   pip install -r requirements.txt
-   
-   # Set your API Key (Windows Powershell)
-   $env:DASHSCOPE_API_KEY="your_api_key_here"
-   
-   # Or on Linux/Mac
-   export DASHSCOPE_API_KEY="your_api_key_here"
-   
-   # Run server
-   uvicorn app.main:app --reload
-   ```
+```bash
+git clone https://github.com/your-username/VividCrowd.git
+cd VividCrowd
+```
 
-3. **Frontend Setup** (Open a new terminal)
-   
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
+**2. Backend setup**
 
-4. **Access**
-   Open your browser at `http://localhost:5173` (or the port shown by Vite).
+```bash
+cd backend
+pip install -r requirements.txt
+
+# Set API Key
+# Windows PowerShell
+$env:DASHSCOPE_API_KEY="your_api_key_here"
+
+# Linux/Mac
+export DASHSCOPE_API_KEY="your_api_key_here"
+
+# Start server
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+**3. Frontend setup**
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+**4. Access the application**
+
+Open browser at `http://localhost:5173`
 
 ---
 
-## ⚙️ Configuration Guide
+## 📡 API Documentation
 
-Modify `backend/app/core/config.py` to tweak the simulation:
+### REST API
 
-* `STRICT_PERSONA_CHECK`: Enable/Disable strict role adherence.
-* `ENABLE_LLM_ROUTING`: Toggle the "Slow Path" semantic router.
-* `NIGHT_MODE_START_HOUR`: Set when agents go to sleep.
-* `MAX_TYPING_DELAY`: Adjust how long agents "type" before sending.
+#### General
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check |
+
+#### Smart Group Chat
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/agents` | Get all group chat agent info |
+
+#### Digital Twins
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/celebrities` | Get all digital twins |
+| GET | `/celebrities/{id}` | Get specific twin details |
+| POST | `/celebrities/upload` | Upload PDF to create twin |
+| DELETE | `/celebrities/{id}` | Delete digital twin |
+
+#### Customer Service
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/customer-service/import-csv` | Import CSV knowledge base |
+| GET | `/customer-service/analytics` | Get analytics data |
+| GET | `/customer-service/session/{id}` | Get session history |
+| POST | `/customer-service/session/{id}/rating` | Submit user rating |
+
+### WebSocket Endpoints
+
+#### Smart Group Chat (`/ws`)
+
+**Send:** Plain text message
+
+**Receive:**
+```json
+{"type": "stream_start", "sender": "Xiaolin", "content": ""}
+{"type": "stream_chunk", "sender": "Xiaolin", "content": "Hey"}
+{"type": "stream_end", "sender": "Xiaolin", "content": ""}
+```
+
+#### Digital Twins (`/ws/celebrity`)
+
+**Send:**
+```json
+{
+  "message": "What's your view on AI?",
+  "celebrity_ids": [1, 2, 3],
+  "mode": "private|group"
+}
+```
+
+**Receive:** Same as above
+
+#### Customer Service (`/ws/customer-service`)
+
+**Send:**
+```json
+{"message": "What if my child is picky?"}
+```
+
+**Receive:**
+```json
+{"type": "session_created", "session_id": "uuid"}
+{"type": "response", "content": "...", "confidence": 0.85, "match_type": "mid_confidence"}
+```
+
+---
+
+## ⚙️ Configuration
+
+### Backend Config (`backend/app/core/config.py`)
+
+```python
+# Group Chat Config
+STRICT_PERSONA_CHECK = True      # Strict persona checking
+ENABLE_LLM_ROUTING = True        # LLM semantic routing
+MIN_TYPING_DELAY = 8.0           # Min typing delay (seconds)
+MAX_TYPING_DELAY = 10.0          # Max typing delay (seconds)
+MAX_AGENTS_PER_ROUND = 3         # Max responders per round
+
+# Night Mode
+NIGHT_MODE_START_HOUR = 23
+NIGHT_MODE_END_HOUR = 7
+NIGHT_MODE_PROBABILITY = 0.2     # Night activity probability
+
+# Customer Service Config (qa_matcher.py)
+HIGH_CONFIDENCE_THRESHOLD = 0.9  # High confidence threshold
+MID_CONFIDENCE_THRESHOLD = 0.6   # Medium confidence threshold
+BM25_WEIGHT = 0.6                # BM25 weight
+EMBEDDING_WEIGHT = 0.4           # Embedding weight
+
+# LLM Models
+MODEL_NAME = "qwen-max"          # Main response model
+ROUTER_MODEL_NAME = "qwen-turbo" # Router model
+```
+
+### Frontend Config (`frontend/src/config.js`)
+
+```javascript
+export const CONFIG = {
+  API_BASE_URL: 'http://localhost:8000',
+  WS_URL: 'ws://localhost:8000/ws',
+  CELEBRITY_WS_URL: 'ws://localhost:8000/ws/celebrity',
+  CUSTOMER_SERVICE_WS_URL: 'ws://localhost:8000/ws/customer-service'
+};
+```
+
+---
+
+## 📊 Database Models
+
+### Main Tables
+
+| Table Name | Purpose |
+|------------|---------|
+| `knowledge_sources` | Digital twin knowledge sources |
+| `customer_service_qa` | Customer service QA knowledge base |
+| `customer_service_sessions` | Customer service session records |
+| `customer_service_logs` | Customer service conversation logs |
+| `csv_registry` | CSV file registry |
+
+### Key Fields
+
+**customer_service_qa:**
+```sql
+id, question_count, topic_name, typical_question,
+standard_script, risk_notes, keywords, embedding, created_at
+```
+
+**knowledge_sources:**
+```sql
+id, name, source_type, author, birth_year, death_year,
+nationality, occupation, biography, famous_works, famous_quotes,
+personality_traits, speech_style, system_prompt, raw_content
+```
+
+---
+
+## 🎯 Use Cases
+
+| Scenario | Recommended Mode | Description |
+|----------|-----------------|-------------|
+| Entertainment | Smart Group Chat | Chat casually with virtual friends |
+| Learning | Digital Twins | Converse with historical figures, books, experts |
+| Brainstorming | Twin Group Chat | Multiple experts' idea collision |
+| Enterprise CS | Customer Service | Knowledge-base powered Q&A |
+| Product Consulting | Customer Service | Standard scripts + smart guidance |
 
 ---
 
 ## 🤝 Contributing
 
-We welcome Pull Requests! Please ensure:
+Pull Requests welcome! Please ensure:
 
-1. Python code follows PEP 8 standards.
-2. New features are covered by tests (if applicable).
-3. Do not commit your `agents_profiles.json` if it contains private or sensitive personas.
+1. Python code follows PEP 8 standards
+2. New features include necessary tests
+3. Update relevant documentation
+4. **Do not** commit config files with sensitive information
 
 ---
 
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is open-sourced under the [MIT License](LICENSE).
+
+---
+
+## 🙏 Acknowledgments
+
+- [Alibaba Cloud DashScope](https://dashscope.console.aliyun.com/) - LLM and Embedding services
+- [FastAPI](https://fastapi.tiangolo.com/) - High-performance web framework
+- [React](https://react.dev/) - Frontend UI framework
+- [Material-UI](https://mui.com/) - UI component library
+
+---
+
+## 📬 Contact
+
+For questions or suggestions, please submit an [Issue](https://github.com/your-username/VividCrowd/issues) or start a [Discussion](https://github.com/your-username/VividCrowd/discussions).

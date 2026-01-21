@@ -43,3 +43,20 @@ yarn-error.log*
 .gemini/
 logs/
 *.log
+
+# Database
+*.db
+*.sqlite3
+
+# Uploads
+uploads/
+backend/uploads/
+
+# Data files
+backend/data/
+
+# Windows
+nul
+
+# Docs (if auto-generated)
+backend/docs/

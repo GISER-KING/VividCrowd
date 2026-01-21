@@ -2,6 +2,10 @@ import os
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
+    # === 服务器配置 ===
+    HOST: str = "127.0.0.1"  # 只监听本地，不对外暴露
+    PORT: int = 8001  # 后端端口
+
     # === 基础配置 ===
     DASHSCOPE_API_KEY: str = os.getenv("DASHSCOPE_API_KEY", "")
     # 升级为 qwen-max 以获得更好的人设扮演能力
