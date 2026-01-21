@@ -45,14 +45,12 @@ logs/
 *.log
 
 # Database
-*.db
 *.sqlite3
 
 # Uploads
 uploads/
 backend/uploads/
 
-# Data files
 
 # Windows
 nul
