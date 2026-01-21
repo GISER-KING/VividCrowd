@@ -3,7 +3,7 @@
     {
       "name": "vividcrowd-frontend",
       "script": "npm",
-      "args": "run dev",
+      "args": "run preview",
       "cwd": "./frontend",
       "interpreter": "none",
       "env": {
