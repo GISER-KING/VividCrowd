@@ -60,3 +60,37 @@ class CelebrityChatMessage(BaseModel):
     message: str
     celebrity_ids: List[int]
     mode: str = "private"  # private/group
+
+
+# ========== 数字客户相关模型 ==========
+
+class CustomerProfileBase(BaseModel):
+    name: str
+    age_range: Optional[str] = None
+    gender: Optional[str] = None
+    occupation: Optional[str] = None
+    industry: Optional[str] = None
+    personality_traits: Optional[str] = None
+    communication_style: Optional[str] = None
+    pain_points: Optional[str] = None
+    needs: Optional[str] = None
+    objections: Optional[str] = None
+
+class CustomerProfileCreate(CustomerProfileBase):
+    system_prompt: Optional[str] = None
+    raw_content: Optional[str] = None
+    source_file_path: Optional[str] = None
+
+class CustomerProfileResponse(CustomerProfileBase):
+    id: int
+    system_prompt: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class CustomerChatMessage(BaseModel):
+    message: str
+    customer_ids: List[int]
+    mode: str = "private"  # private/group

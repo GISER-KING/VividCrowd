@@ -1,5 +1,6 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, Float, Boolean, LargeBinary
+from sqlalchemy import Column, Integer, String, Text, DateTime, Float, Boolean, LargeBinary, ForeignKey, JSON
+from sqlalchemy.orm import relationship
 from backend.core.database import Base
 import enum
 
@@ -59,6 +60,39 @@ class KnowledgeSource(Base):
             "system_prompt": self.system_prompt,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class CelebrityChunk(Base):
+    """名人知识分块表 - 存储文档分块和向量嵌入"""
+    __tablename__ = "celebrity_chunks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    knowledge_source_id = Column(Integer, ForeignKey("knowledge_sources.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # 分块内容
+    chunk_text = Column(Text, nullable=False)
+    chunk_index = Column(Integer, nullable=False)  # 在文档中的顺序
+    chunk_metadata = Column(JSON, nullable=True)  # {"page": 1, "section": "第一章"}
+
+    # 向量嵌入
+    embedding = Column(LargeBinary, nullable=True)  # 存储序列化的 numpy array (1536维)
+
+    # 时间戳
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # 关系
+    knowledge_source = relationship("KnowledgeSource", backref="chunks")
+
+    def to_dict(self):
+        """转换为字典"""
+        return {
+            "id": self.id,
+            "knowledge_source_id": self.knowledge_source_id,
+            "chunk_text": self.chunk_text,
+            "chunk_index": self.chunk_index,
+            "chunk_metadata": self.chunk_metadata,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 
@@ -164,4 +198,138 @@ class CSVRegistry(Base):
             "record_count": self.record_count,
             "status": self.status,
             "imported_at": self.imported_at.isoformat() if self.imported_at else None,
+        }
+
+
+class ChatSession(Base):
+    """对话会话表 - Celebrity应用的会话管理"""
+    __tablename__ = "chat_sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String(64), unique=True, index=True, nullable=False)
+    user_id = Column(String(64), nullable=True)  # 可选：用户标识
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+
+    # 关联的消息
+    messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
+
+    def to_dict(self):
+        """转换为字典"""
+        return {
+            "id": self.id,
+            "session_id": self.session_id,
+            "user_id": self.user_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "is_active": self.is_active,
+        }
+
+
+class ChatMessage(Base):
+    """对话消息表 - Celebrity应用的消息记录"""
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(Integer, ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    sender = Column(String(100), nullable=False)  # "用户" 或 专家名字
+    content = Column(Text, nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+    # 关联的会话
+    session = relationship("ChatSession", back_populates="messages")
+
+    def to_dict(self):
+        """转换为字典"""
+        return {
+            "id": self.id,
+            "session_id": self.session_id,
+            "sender": self.sender,
+            "content": self.content,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+        }
+
+
+# ==================== 数字客户模型 ====================
+
+class CustomerProfile(Base):
+    """客户画像表 - 存储标准客户的结构化信息"""
+    __tablename__ = "customer_profiles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, index=True)
+
+    # 客户基本信息
+    age_range = Column(String(50), nullable=True)  # 年龄段
+    gender = Column(String(20), nullable=True)
+    occupation = Column(String(100), nullable=True)
+    industry = Column(String(100), nullable=True)
+
+    # 客户特征
+    personality_traits = Column(Text, nullable=True)  # 性格特征
+    communication_style = Column(Text, nullable=True)  # 沟通风格
+    pain_points = Column(Text, nullable=True)  # 痛点
+    needs = Column(Text, nullable=True)  # 需求
+    objections = Column(Text, nullable=True)  # 常见异议
+
+    # AI 相关
+    system_prompt = Column(Text, nullable=True)
+    raw_content = Column(Text, nullable=True)  # 原始文本
+    source_file_path = Column(String(500), nullable=True)
+
+    # 时间戳
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        """转换为字典"""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "age_range": self.age_range,
+            "gender": self.gender,
+            "occupation": self.occupation,
+            "industry": self.industry,
+            "personality_traits": self.personality_traits,
+            "communication_style": self.communication_style,
+            "pain_points": self.pain_points,
+            "needs": self.needs,
+            "objections": self.objections,
+            "system_prompt": self.system_prompt,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class CustomerChunk(Base):
+    """客户知识分块表 - 存储文档分块和向量嵌入"""
+    __tablename__ = "customer_chunks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    customer_profile_id = Column(Integer, ForeignKey("customer_profiles.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # 分块内容
+    chunk_text = Column(Text, nullable=False)
+    chunk_index = Column(Integer, nullable=False)
+    chunk_metadata = Column(JSON, nullable=True)
+
+    # 向量嵌入
+    embedding = Column(LargeBinary, nullable=True)
+
+    # 时间戳
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # 关系
+    customer_profile = relationship("CustomerProfile", backref="chunks")
+
+    def to_dict(self):
+        """转换为字典"""
+        return {
+            "id": self.id,
+            "customer_profile_id": self.customer_profile_id,
+            "chunk_text": self.chunk_text,
+            "chunk_index": self.chunk_index,
+            "chunk_metadata": self.chunk_metadata,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }

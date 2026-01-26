@@ -6,7 +6,7 @@ from loguru import logger
 from backend.core.config import settings
 
 class PDFParserService:
-    """PDF 解析服务 - 提取文本并用 LLM 结构化解析"""
+    """文档解析服务 - 提取文本并用 LLM 结构化解析（支持PDF和Markdown）"""
 
     @staticmethod
     def extract_text_from_pdf(pdf_path: str) -> str:
@@ -21,6 +21,26 @@ class PDFParserService:
         except Exception as e:
             logger.error(f"PDF extraction error: {e}")
             raise ValueError(f"无法读取 PDF 文件: {e}")
+
+    @staticmethod
+    def extract_text_from_markdown(md_path: str) -> str:
+        """从 Markdown 文件提取文本"""
+        try:
+            with open(md_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception as e:
+            logger.error(f"Markdown extraction error: {e}")
+            raise ValueError(f"无法读取 Markdown 文件: {e}")
+
+    @staticmethod
+    def extract_text_from_file(file_path: str) -> str:
+        """根据文件类型自动选择提取方法"""
+        if file_path.lower().endswith('.pdf'):
+            return PDFParserService.extract_text_from_pdf(file_path)
+        elif file_path.lower().endswith('.md'):
+            return PDFParserService.extract_text_from_markdown(file_path)
+        else:
+            raise ValueError(f"不支持的文件类型: {file_path}")
 
     @staticmethod
     async def parse_celebrity_info(raw_text: str, source_type: str = "person") -> Dict[str, Any]:

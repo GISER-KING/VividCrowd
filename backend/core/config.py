@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True  # 开发模式，生产环境设为 False
 
     # === 基础配置 ===
-    DASHSCOPE_API_KEY: str = os.getenv("DASHSCOPE_API_KEY", "")
+    DASHSCOPE_API_KEY: str = os.getenv("DASHSCOPE_API_KEY", "sk-d500437bc88e4e97b6a8e54d2d55c963")
     # 升级为 qwen-max 以获得更好的人设扮演能力
     MODEL_NAME: str = "qwen-max"
     PROFILES_PATH: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "agents_profiles.json")

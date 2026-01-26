@@ -25,10 +25,15 @@ function CelebrityUpload({ onUploadSuccess }) {
 
   const processFile = (selectedFile) => {
     if (selectedFile) {
-      if (selectedFile.type !== 'application/pdf') {
-        setError('请选择 PDF 文件');
+      const validTypes = ['application/pdf', 'text/markdown', 'text/plain'];
+      const validExtensions = ['.pdf', '.md'];
+      const fileExtension = selectedFile.name.toLowerCase().slice(selectedFile.name.lastIndexOf('.'));
+
+      if (!validTypes.includes(selectedFile.type) && !validExtensions.includes(fileExtension)) {
+        setError('请选择 PDF 或 Markdown 文件');
         return;
       }
+
       setFile(selectedFile);
       setError('');
       setSuccess('');
@@ -67,7 +72,7 @@ function CelebrityUpload({ onUploadSuccess }) {
     formData.append('source_type', sourceType);
 
     try {
-      const response = await fetch(`${CONFIG.API_BASE_URL}/celebrities/upload`, {
+      const response = await fetch(`${CONFIG.API_BASE_URL}/celebrity/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -245,7 +250,7 @@ function CelebrityUpload({ onUploadSuccess }) {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf"
+            accept=".pdf,.md"
             onChange={handleFileSelect}
             style={{ display: 'none' }}
           />
@@ -292,10 +297,10 @@ function CelebrityUpload({ onUploadSuccess }) {
                 <CloudUploadIcon sx={{ fontSize: 32, color: '#667eea' }} />
               </Box>
               <Typography sx={{ color: 'rgba(255, 255, 255, 0.8)', mb: 0.5 }}>
-                点击或拖拽 PDF 文件到这里
+                点击或拖拽文件到这里
               </Typography>
               <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.4)' }}>
-                支持 .pdf 格式
+                支持 .pdf / .md 格式
               </Typography>
             </Box>
           )}
@@ -383,7 +388,7 @@ function CelebrityUpload({ onUploadSuccess }) {
             lineHeight: 1.6,
           }}
         >
-          系统将自动解析 PDF 内容，提取关键信息并生成数字分身
+          系统将自动解析文档内容，提取关键信息并生成数字分身
         </Typography>
       </Box>
     </Paper>

@@ -7,7 +7,7 @@ from .response_generator import ResponseGenerator
 from .session_manager import SessionManager
 from .orchestrator import CustomerServiceOrchestrator
 from .csv_registry import csv_registry_service, CSVRegistryService, auto_import_csv_files
-from .embedding_service import EmbeddingService
+from .embedding_service import EmbeddingService, embedding_service
 
 __all__ = [
     'import_qa_from_csv',
@@ -21,4 +21,5 @@ __all__ = [
     'CSVRegistryService',
     'auto_import_csv_files',
     'EmbeddingService',
+    'embedding_service',
 ]

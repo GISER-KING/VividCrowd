@@ -15,6 +15,9 @@ export const CONFIG = {
     // 客服对话 WebSocket 地址
     CUSTOMER_SERVICE_WS_URL: `${getWsProtocol()}//${getWsHost()}/api/customer-service/ws`,
 
+    // 数字客户 WebSocket 地址
+    DIGITAL_CUSTOMER_WS_URL: `${getWsProtocol()}//${getWsHost()}/api/digital-customer/ws`,
+
     // API 基础地址（通过Vite代理转发）
     API_BASE_URL: '/api',
 

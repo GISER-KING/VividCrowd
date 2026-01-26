@@ -17,6 +17,8 @@ from .schemas import (
     CelebrityChatMessage
 )
 
+from ..core.database import engine, async_session, init_db
+
 __all__ = [
     # 数据库模型
     "Base",
@@ -33,5 +35,8 @@ __all__ = [
     "CelebrityBase",
     "CelebrityCreate",
     "CelebrityResponse",
-    "CelebrityChatMessage"
+    "CelebrityChatMessage",
+    "engine",
+    "async_session",
+    "init_db"
 ]

@@ -7,6 +7,7 @@ import {
 import GroupIcon from '@mui/icons-material/Group';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import SupportAgentIcon from '@mui/icons-material/SupportAgent';
+import PersonIcon from '@mui/icons-material/Person';
 
 const DRAWER_WIDTH = 240;
 
@@ -14,6 +15,7 @@ const menuItems = [
   { path: '/', label: '智能群聊', icon: <GroupIcon />, description: 'AI 群体对话' },
   { path: '/celebrity', label: '数字分身', icon: <AutoAwesomeIcon />, description: '名人智囊团' },
   { path: '/customer-service', label: '数字客服', icon: <SupportAgentIcon />, description: '智能客服系统' },
+  { path: '/digital-customer', label: '数字客户', icon: <PersonIcon />, description: '销售能力培训' },
 ];
 
 function Sidebar() {

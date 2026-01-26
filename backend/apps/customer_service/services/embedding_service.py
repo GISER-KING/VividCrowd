@@ -128,3 +128,11 @@ class EmbeddingService:
     def bytes_to_embedding(self, data: bytes) -> np.ndarray:
         """将bytes反序列化为numpy向量"""
         return np.frombuffer(data, dtype=np.float32)
+
+
+# 创建全局实例（延迟初始化避免循环导入）
+def _get_embedding_service():
+    from backend.core.config import settings
+    return EmbeddingService(api_key=settings.DASHSCOPE_API_KEY)
+
+embedding_service = _get_embedding_service()

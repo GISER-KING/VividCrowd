@@ -21,6 +21,7 @@ function CelebrityPage() {
   const [activeTab, setActiveTab] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const bottomRef = useRef(null);
+  const chatContainerRef = useRef(null);
 
   const {
     messages,
@@ -35,8 +36,8 @@ function CelebrityPage() {
   }, []);
 
   useEffect(() => {
-    if (messages.length > 0) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messages.length > 0 && chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
   }, [messages, typingStatus]);
 
@@ -48,7 +49,7 @@ function CelebrityPage() {
 
   const fetchCelebrities = async () => {
     try {
-      const response = await fetch(`${CONFIG.API_BASE_URL}/celebrities`);
+      const response = await fetch(`${CONFIG.API_BASE_URL}/celebrity`);
       if (response.ok) {
         const data = await response.json();
         setCelebrities(data);
@@ -75,7 +76,7 @@ function CelebrityPage() {
     if (!deleteTarget) return;
     try {
       const response = await fetch(
-        `${CONFIG.API_BASE_URL}/celebrities/${deleteTarget.id}`,
+        `${CONFIG.API_BASE_URL}/celebrity/${deleteTarget.id}`,
         { method: 'DELETE' }
       );
       if (response.ok) {
@@ -243,11 +244,13 @@ function CelebrityPage() {
       <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 1 }}>
         {activeTab === 0 ? (
           <>
-            {/* 名人选择区域 */}
+            {/* 名人选择区域 - 固定在顶部 */}
             <Box
               sx={{
                 p: 2,
                 flexShrink: 0,
+                maxHeight: '150px',
+                overflowY: 'auto',
                 background: 'rgba(255, 255, 255, 0.02)',
                 borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
               }}
@@ -373,6 +376,7 @@ function CelebrityPage() {
 
             {/* 聊天区域 */}
             <Box
+              ref={chatContainerRef}
               sx={{
                 flex: 1,
                 minHeight: 0,

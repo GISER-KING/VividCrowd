@@ -6,7 +6,7 @@ import json
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from loguru import logger
 
-from backend.core.database import async_session
+from backend.core.database import customer_service_async_session
 from backend.core.config import settings
 from .services.orchestrator import CustomerServiceOrchestrator
 from .services.excel_importer import import_qa_from_csv, get_qa_count
@@ -28,7 +28,7 @@ async def startup_event():
     """应用启动时初始化"""
     logger.info("客服子应用启动中...")
 
-    async with async_session() as db:
+    async with customer_service_async_session() as db:
         # 自动导入 CSV 文件
         await auto_import_csv_files(
             db=db,
@@ -46,7 +46,7 @@ async def startup_event():
 @customer_service_app.get("/stats")
 async def get_stats():
     """获取客服系统统计信息"""
-    async with async_session() as db:
+    async with customer_service_async_session() as db:
         analytics = await orchestrator.get_analytics(db)
         matcher_stats = orchestrator.get_matcher_stats()
         return {
@@ -58,7 +58,7 @@ async def get_stats():
 @customer_service_app.get("/qa/count")
 async def get_qa_record_count():
     """获取QA记录数量"""
-    async with async_session() as db:
+    async with customer_service_async_session() as db:
         count = await get_qa_count(db)
         return {"count": count}
 
@@ -66,7 +66,7 @@ async def get_qa_record_count():
 @customer_service_app.post("/session")
 async def create_session():
     """创建新会话"""
-    async with async_session() as db:
+    async with customer_service_async_session() as db:
         session_id = await orchestrator.create_session(db)
         return {"session_id": session_id}
 
@@ -74,7 +74,7 @@ async def create_session():
 @customer_service_app.get("/session/{session_id}/history")
 async def get_session_history(session_id: str):
     """获取会话历史"""
-    async with async_session() as db:
+    async with customer_service_async_session() as db:
         history = await orchestrator.get_session_history(db, session_id)
         return {
             "session_id": session_id,
@@ -97,7 +97,7 @@ async def set_session_rating(session_id: str, rating: int):
     if not 1 <= rating <= 5:
         raise HTTPException(status_code=400, detail="评分必须在1-5之间")
 
-    async with async_session() as db:
+    async with customer_service_async_session() as db:
         await orchestrator.set_user_rating(db, session_id, rating)
         return {"message": "评分成功"}
 
@@ -123,7 +123,7 @@ async def customer_service_websocket(websocket: WebSocket):
             # 检查是否是会话恢复请求
             if msg.get("type") == "resume_session" and msg.get("session_id"):
                 resume_session_id = msg.get("session_id")
-                async with async_session() as db:
+                async with customer_service_async_session() as db:
                     existing_session = await orchestrator.session_manager.get_session(db, resume_session_id)
                     if existing_session:
                         session_id = resume_session_id
@@ -139,7 +139,7 @@ async def customer_service_websocket(websocket: WebSocket):
 
         # 如果没有有效的会话恢复请求，创建新会话
         if should_create_new_session:
-            async with async_session() as db:
+            async with customer_service_async_session() as db:
                 session_id = await orchestrator.create_session(db)
 
             await websocket.send_json({
@@ -153,7 +153,7 @@ async def customer_service_websocket(websocket: WebSocket):
             stream_mode = msg.get("stream", False)
 
             if user_query.strip():
-                async with async_session() as db:
+                async with customer_service_async_session() as db:
                     if stream_mode:
                         # 流式模式
                         async for response in orchestrator.handle_query_stream(
@@ -197,7 +197,7 @@ async def customer_service_websocket(websocket: WebSocket):
                     })
                     continue
 
-                async with async_session() as db:
+                async with customer_service_async_session() as db:
                     if stream_mode:
                         # 流式模式
                         async for response in orchestrator.handle_query_stream(

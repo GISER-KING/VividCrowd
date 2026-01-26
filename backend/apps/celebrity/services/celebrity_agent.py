@@ -1,20 +1,25 @@
 import asyncio
-from typing import List, AsyncGenerator
+from typing import List, AsyncGenerator, Optional
 from dashscope import Generation
 from loguru import logger
+from sqlalchemy.orm import Session
 from backend.core.config import settings
 from backend.models.db_models import KnowledgeSource
+from .celebrity_retriever import CelebrityRetriever
 
 class CelebrityAgent:
     """名人数字分身 Agent"""
 
-    def __init__(self, celebrity: KnowledgeSource):
+    def __init__(self, celebrity: KnowledgeSource, db_session: Optional[Session] = None):
         self.id = celebrity.id
         self.name = celebrity.name
         self.source_type = celebrity.source_type
         self.system_prompt = celebrity.system_prompt or ""
         self.knowledge_base = celebrity.knowledge_base or ""
         self.raw_content = celebrity.raw_content or ""
+
+        # 混合检索服务（如果提供了 db_session）
+        self.retriever = CelebrityRetriever(db_session) if db_session else None
 
     async def generate_response_stream(
         self,
@@ -34,12 +39,27 @@ class CelebrityAgent:
 
         # 构建完整 prompt
         if mode == "group":
-            # 群聊模式：回复更简短，注意轮流发言
+            # 群聊模式：应用去重和互动优化
+            expert_replies = [msg for msg in chat_history if not msg.startswith("用户:")]
+
+            if expert_replies:
+                interaction_hint = (
+                    f"【其他专家观点】\n"
+                    f"{chr(10).join(expert_replies[-2:])}\n\n"
+                    f"【回复要求】\n"
+                    f"1. 避免重复上述专家已提到的观点\n"
+                    f"2. 可以赞同、补充或提出不同看法\n"
+                    f"3. 从你独特的视角给出见解\n"
+                    f"4. 回复简洁有力（50字以内）\n\n"
+                )
+            else:
+                interaction_hint = "【回复要求】\n请给出你独特的视角和观点，回复简洁有力（50字以内）。\n\n"
+
             full_prompt = (
                 f"{self.system_prompt}\n\n"
                 f"【当前场景】\n"
-                f"你正在参与一个智囊团群聊，与其他专家一起讨论用户的问题。\n"
-                f"请给出你独特的视角和观点，回复简洁有力（50字以内）。\n\n"
+                f"你正在参与一个智囊团群聊，与其他专家一起讨论用户的问题。\n\n"
+                f"{interaction_hint}"
                 f"对话历史：\n{context}\n\n"
                 f"用户最新问题：{user_msg}\n\n"
                 f"请以 {self.name} 的身份回复："
@@ -55,20 +75,103 @@ class CelebrityAgent:
                 f"请以 {self.name} 的身份回复（100-200字为宜）："
             )
 
-        # 如果有原始知识库内容，可以进行简单的关键词匹配检索
-        if self.raw_content and len(self.raw_content) > 100:
-            # 简单检索：找到包含用户关键词的段落
+        # 使用混合检索获取相关知识
+        if self.retriever:
+            try:
+                # 优化1：构建增强的检索query，结合对话历史
+                # 取最近2-3条对话作为上下文，避免query过长
+                recent_history = chat_history[-3:] if len(chat_history) > 0 else []
+                if recent_history:
+                    # 格式：[上下文] 当前问题
+                    enhanced_query = f"{' '.join(recent_history[-2:])} {user_msg}"
+                else:
+                    enhanced_query = user_msg
+
+                relevant_context = await self.retriever.get_context_for_query(
+                    knowledge_source_id=self.id,
+                    query=enhanced_query,
+                    top_k=3,
+                    use_hybrid=True
+                )
+                if relevant_context:
+                    # 优化2&3：在群聊模式下，分析前面专家的回复，实现去重和互动
+                    if mode == "group":
+                        # 提取前面专家的回复（排除用户消息）
+                        expert_replies = [msg for msg in chat_history if not msg.startswith("用户:")]
+
+                        if expert_replies:
+                            # 构建去重和互动提示
+                            interaction_hint = (
+                                f"【其他专家观点】\n"
+                                f"{chr(10).join(expert_replies[-2:])}\n\n"  # 最近2条专家回复
+                                f"【回复要求】\n"
+                                f"1. 避免重复上述专家已提到的观点\n"
+                                f"2. 可以赞同、补充或提出不同看法\n"
+                                f"3. 从你独特的视角给出见解\n"
+                                f"4. 回复简洁有力（50字以内）\n\n"
+                            )
+                        else:
+                            interaction_hint = "【回复要求】\n回复简洁有力（50字以内）\n\n"
+
+                        full_prompt = (
+                            f"{self.system_prompt}\n\n"
+                            f"【相关知识参考】\n{relevant_context}\n\n"
+                            f"【当前场景】\n你正在参与智囊团群聊，与其他专家一起讨论问题。\n\n"
+                            f"{interaction_hint}"
+                            f"对话历史：\n{context}\n\n"
+                            f"用户最新问题：{user_msg}\n\n"
+                            f"请以 {self.name} 的身份回复："
+                        )
+                    else:
+                        # 私聊模式保持原样
+                        full_prompt = (
+                            f"{self.system_prompt}\n\n"
+                            f"【相关知识参考】\n{relevant_context}\n\n"
+                            f"【当前场景】\n一对一私聊\n\n"
+                            f"对话历史：\n{context}\n\n"
+                            f"用户最新问题：{user_msg}\n\n"
+                            f"请以 {self.name} 的身份回复，如果使用了参考知识，请在末尾标注来源："
+                        )
+            except Exception as e:
+                logger.warning(f"Hybrid retrieval failed for {self.name}: {e}, falling back to basic prompt")
+        elif self.raw_content and len(self.raw_content) > 100:
+            # 降级方案：如果没有 retriever，使用简单关键词检索
             relevant_chunks = self._retrieve_relevant_chunks(user_msg)
             if relevant_chunks:
-                full_prompt = (
-                    f"{self.system_prompt}\n\n"
-                    f"【相关知识参考】\n{relevant_chunks}\n\n"
-                    f"【当前场景】\n"
-                    f"{'智囊团群聊，回复简洁（50字以内）' if mode == 'group' else '一对一私聊'}\n\n"
-                    f"对话历史：\n{context}\n\n"
-                    f"用户最新问题：{user_msg}\n\n"
-                    f"请以 {self.name} 的身份回复，如果使用了参考知识，请在末尾标注来源："
-                )
+                # 应用相同的去重和互动优化
+                if mode == "group":
+                    expert_replies = [msg for msg in chat_history if not msg.startswith("用户:")]
+                    if expert_replies:
+                        interaction_hint = (
+                            f"【其他专家观点】\n"
+                            f"{chr(10).join(expert_replies[-2:])}\n\n"
+                            f"【回复要求】\n"
+                            f"1. 避免重复上述专家已提到的观点\n"
+                            f"2. 可以赞同、补充或提出不同看法\n"
+                            f"3. 从你独特的视角给出见解\n"
+                            f"4. 回复简洁有力（50字以内）\n\n"
+                        )
+                    else:
+                        interaction_hint = "【回复要求】\n回复简洁有力（50字以内）\n\n"
+
+                    full_prompt = (
+                        f"{self.system_prompt}\n\n"
+                        f"【相关知识参考】\n{relevant_chunks}\n\n"
+                        f"【当前场景】\n你正在参与智囊团群聊，与其他专家一起讨论问题。\n\n"
+                        f"{interaction_hint}"
+                        f"对话历史：\n{context}\n\n"
+                        f"用户最新问题：{user_msg}\n\n"
+                        f"请以 {self.name} 的身份回复："
+                    )
+                else:
+                    full_prompt = (
+                        f"{self.system_prompt}\n\n"
+                        f"【相关知识参考】\n{relevant_chunks}\n\n"
+                        f"【当前场景】\n一对一私聊\n\n"
+                        f"对话历史：\n{context}\n\n"
+                        f"用户最新问题：{user_msg}\n\n"
+                        f"请以 {self.name} 的身份回复，如果使用了参考知识，请在末尾标注来源："
+                    )
 
         # 调用 DashScope API
         max_retries = 1
