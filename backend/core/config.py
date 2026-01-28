@@ -1,52 +1,70 @@
 import os
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
+import dotenv
+
+# 第一步：在类定义前加载 .env 文件
+dotenv.load_dotenv()
 
 class Settings(BaseSettings):
+    """应用配置类 - 自动从环境变量/.env 读取"""
+    
+    # 配置 Pydantic 从 .env 文件和环境变量读取
+    model_config = SettingsConfigDict(
+        env_file='.env',           # 从 .env 文件读取
+        env_file_encoding='utf-8',
+        case_sensitive=False,      # 环境变量不区分大小写
+        extra='ignore'             # 忽略未定义的环境变量
+    )
+    
     # === 服务器配置 ===
-    HOST: str = "127.0.0.1"  # 只监听本地，不对外暴露
-    PORT: int = 8001  # 后端端口
-    DEBUG: bool = True  # 开发模式，生产环境设为 False
+    HOST: str = "127.0.0.1"
+    PORT: int = 8001
+    DEBUG: bool = False
 
     # === 基础配置 ===
-    DASHSCOPE_API_KEY: str = os.getenv("DASHSCOPE_API_KEY", "sk-d500437bc88e4e97b6a8e54d2d55c963")
-    # 升级为 qwen-max 以获得更好的人设扮演能力
+    DASHSCOPE_API_KEY: str  # 必填，无默认值（会从环境变量自动读取）
     MODEL_NAME: str = "qwen-max"
     PROFILES_PATH: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "agents_profiles.json")
 
     # === 聊天行为配置 ===
-    # 模拟真人打字/思考延迟（秒）
-    # 建议设置在 8.0 - 10.0 秒，模拟真实群聊的打字速度，避免秒回
     MIN_TYPING_DELAY: float = 8.0
     MAX_TYPING_DELAY: float = 10.0
-
-    # 每次触发最大回复的 Agent 数量
     MAX_AGENTS_PER_ROUND: int = 3
 
-    # === 在线时间控制（新增）===
-    # 深夜模式开始时间 (24小时制)
+    # === 在线时间控制 ===
     NIGHT_MODE_START_HOUR: int = 23
-    # 深夜模式结束时间
     NIGHT_MODE_END_HOUR: int = 7
-    # 深夜模式下的活跃度衰减系数 (0.0 - 1.0)
-    # 0.2 表示深夜只有平时 20% 的概率会回复，且回复人数上限也会降低
     NIGHT_MODE_PROBABILITY: float = 0.2
-    # 深夜模式下最大回复人数
     NIGHT_MODE_MAX_AGENTS: int = 1
 
-    # === 人设与风格控制 (新增) ===
-    # 是否开启严格人设模式
-    # True: Agent 会拒绝回答不符合自己身份的问题（如理科生不懂中医），回复更像真人
-    # False: Agent 会尽力回答所有问题（容易像百科全书/机器人）
+    # === 人设与风格控制 ===
     STRICT_PERSONA_CHECK: bool = True
 
-    # === 智能路由配置 (新增) ===
-    # 是否开启 LLM 语义路由 (Slow Path)
-    # 开启后，当无法通过规则匹配到回答者时，会调用 LLM 进行分析
+    # === 智能路由配置 ===
     ENABLE_LLM_ROUTING: bool = True
-    # 路由使用的模型 (建议使用 turbo 以保证速度，response 使用 max 保证质量)
     ROUTER_MODEL_NAME: str = "qwen-turbo"
 
-    class Config:
-        env_file = ".env"
+    # === 数字人视频配置 ===
+    # 火山引擎
+    CELEBRITY_VOLCENGINE_ACCESS_KEY: str  # 必填
+    CELEBRITY_VOLCENGINE_SECRET_KEY: str  # 必填
+    CELEBRITY_VOLCENGINE_REGION: str = "cn-north-1"
+    CELEBRITY_IMAGE_URL: str = "imgs/ElonMask.jpg"
 
+    # 阿里云 OSS
+    CELEBRITY_OSS_ACCESS_KEY_ID: str      # 必填
+    CELEBRITY_OSS_ACCESS_KEY_SECRET: str  # 必填
+    CELEBRITY_OSS_BUCKET_NAME: str = "digitalpatient"
+    CELEBRITY_OSS_ENDPOINT: str = "oss-cn-beijing.aliyuncs.com"
+    CELEBRITY_OSS_AUDIO_DIR: str = "celebrity_audio"
+
+    # TTS
+    CELEBRITY_TTS_VOICE: str = "longxiaochun"
+    CELEBRITY_TTS_MODEL: str = "cosyvoice-v1"
+
+
+# 创建全局配置实例
 settings = Settings()
+
+# ✅ 验证：可以直接通过 settings.变量名 访问
+# 例如：settings.DASHSCOPE_API_KEY 会自动从环境变量读取

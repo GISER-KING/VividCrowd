@@ -2,11 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Box, Container, Paper, TextField, IconButton, Typography,
   Avatar, Tabs, Tab, Divider, Dialog, DialogTitle, DialogContent,
-  DialogActions, Button, Chip, InputAdornment
+  DialogActions, Button, Chip, InputAdornment, CircularProgress
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import ElectricBoltIcon from '@mui/icons-material/ElectricBolt';
+import MicIcon from '@mui/icons-material/Mic';
+import StopIcon from '@mui/icons-material/Stop';
 import CelebritySelector from '../components/celebrity/CelebritySelector';
 import CelebrityUpload from '../components/celebrity/CelebrityUpload';
 import ChatModeToggle from '../components/celebrity/ChatModeToggle';
@@ -18,6 +20,10 @@ function CelebrityPage() {
   const [selectedCelebrities, setSelectedCelebrities] = useState([]);
   const [chatMode, setChatMode] = useState('private');
   const [inputMessage, setInputMessage] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
   const [activeTab, setActiveTab] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const bottomRef = useRef(null);
@@ -109,6 +115,66 @@ function CelebrityPage() {
       hash = name.charCodeAt(i) + ((hash << 5) - hash);
     }
     return colors[Math.abs(hash) % colors.length];
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        await transcribeAudio(audioBlob);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error('Failed to start recording:', err);
+      alert('无法访问麦克风，请检查权限设置');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const transcribeAudio = async (audioBlob) => {
+    setIsTranscribing(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', audioBlob, 'recording.webm');
+
+      const response = await fetch(`${CONFIG.API_BASE_URL}/celebrity/digital-human/transcribe-audio`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setInputMessage(data.text);
+      } else {
+        console.error('Transcription failed:', response.statusText);
+        alert('语音识别失败，请重试');
+      }
+    } catch (err) {
+      console.error('Transcription error:', err);
+      alert('语音识别出错，请重试');
+    } finally {
+      setIsTranscribing(false);
+    }
   };
 
   return (
@@ -576,6 +642,79 @@ function CelebrityPage() {
                       >
                         {msg.content}
                       </Typography>
+
+                      {/* 数字人音频（视频生成前先播放） */}
+                      {!msg.isUser && msg.audioUrl && !msg.videoUrl && (
+                        <Box
+                          sx={{
+                            mt: 2,
+                            p: 1.5,
+                            borderRadius: '12px',
+                            background: 'rgba(102, 126, 234, 0.1)',
+                            border: '1px solid rgba(102, 126, 234, 0.3)',
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                            <Box
+                              sx={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: '50%',
+                                background: '#667eea',
+                                animation: 'pulse 1.5s infinite',
+                                '@keyframes pulse': {
+                                  '0%, 100%': { opacity: 1 },
+                                  '50%': { opacity: 0.3 },
+                                },
+                              }}
+                            />
+                            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.6)' }}>
+                              正在生成视频...
+                            </Typography>
+                          </Box>
+                          <audio
+                            src={msg.audioUrl}
+                            controls
+                            autoPlay
+                            style={{
+                              width: '100%',
+                              maxWidth: '400px',
+                              height: '40px',
+                            }}
+                            onError={(e) => {
+                              console.error('Audio load error:', e);
+                            }}
+                          />
+                        </Box>
+                      )}
+
+                      {/* 数字人视频 */}
+                      {!msg.isUser && msg.videoUrl && (
+                        <Box
+                          sx={{
+                            mt: 2,
+                            borderRadius: '12px',
+                            overflow: 'hidden',
+                            background: 'rgba(0, 0, 0, 0.3)',
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                          }}
+                        >
+                          <video
+                            src={`${CONFIG.API_BASE_URL}${msg.videoUrl}`}
+                            controls
+                            autoPlay
+                            style={{
+                              width: '100%',
+                              maxWidth: '400px',
+                              display: 'block',
+                              borderRadius: '12px',
+                            }}
+                            onError={(e) => {
+                              console.error('Video load error:', e);
+                            }}
+                          />
+                        </Box>
+                      )}
                     </Paper>
                   </Box>
 
@@ -659,7 +798,7 @@ function CelebrityPage() {
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
                   onKeyPress={handleKeyPress}
-                  disabled={selectedCelebrities.length === 0}
+                  disabled={selectedCelebrities.length === 0 || isTranscribing}
                   sx={{
                     '& .MuiOutlinedInput-root': {
                       background: 'rgba(255, 255, 255, 0.05)',
@@ -681,9 +820,49 @@ function CelebrityPage() {
                     },
                   }}
                 />
+
+                {/* 语音输入按钮 */}
+                <IconButton
+                  onClick={isRecording ? stopRecording : startRecording}
+                  disabled={selectedCelebrities.length === 0 || isTranscribing}
+                  sx={{
+                    width: 48,
+                    height: 48,
+                    background: isRecording
+                      ? 'linear-gradient(135deg, #f44336 0%, #d32f2f 100%)'
+                      : 'rgba(255, 255, 255, 0.1)',
+                    boxShadow: isRecording
+                      ? '0 0 20px rgba(244, 67, 54, 0.4)'
+                      : 'none',
+                    transition: 'all 0.3s ease',
+                    animation: isRecording ? 'pulse 1.5s infinite' : 'none',
+                    '@keyframes pulse': {
+                      '0%, 100%': { transform: 'scale(1)' },
+                      '50%': { transform: 'scale(1.1)' },
+                    },
+                    '&:hover': {
+                      background: isRecording
+                        ? 'linear-gradient(135deg, #d32f2f 0%, #f44336 100%)'
+                        : 'rgba(255, 255, 255, 0.15)',
+                      transform: 'scale(1.05)',
+                    },
+                    '&.Mui-disabled': {
+                      background: 'rgba(255, 255, 255, 0.05)',
+                    },
+                  }}
+                >
+                  {isTranscribing ? (
+                    <CircularProgress size={24} sx={{ color: '#667eea' }} />
+                  ) : isRecording ? (
+                    <StopIcon sx={{ color: '#fff' }} />
+                  ) : (
+                    <MicIcon sx={{ color: '#fff' }} />
+                  )}
+                </IconButton>
+
                 <IconButton
                   onClick={handleSendMessage}
-                  disabled={!isConnected || selectedCelebrities.length === 0 || !inputMessage.trim()}
+                  disabled={!isConnected || selectedCelebrities.length === 0 || !inputMessage.trim() || isTranscribing}
                   sx={{
                     width: 48,
                     height: 48,

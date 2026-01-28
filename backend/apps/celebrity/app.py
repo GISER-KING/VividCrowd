@@ -5,20 +5,27 @@ import os
 import json
 import shutil
 import asyncio
-from typing import List
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, HTTPException
+from typing import List, Optional
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy import select
 from loguru import logger
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import httpx
 
 from backend.core.database import celebrity_async_session, get_celebrity_db, celebrity_sync_engine
 from backend.models.db_models import KnowledgeSource, CelebrityChunk, ChatSession, ChatMessage, Base
 from backend.models.schemas import CelebrityResponse
+from backend.core.config import settings
 from .services.celebrity_orchestrator import CelebrityOrchestratorService
 from .services.session_manager import CelebritySessionManager
 from .services.pdf_parser import pdf_parser_service
 from .services.chunking_service import chunking_service
 from backend.apps.customer_service.services.embedding_service import embedding_service
+from .services.audio_service import synthesize_audio, transcribe_audio
+from .services.audio_upload_service import audio_upload_service
+from .services.video_service import celebrity_video_service
 
 # 创建子应用
 celebrity_app = FastAPI(title="VividCrowd Celebrity API", version="1.0.0")
@@ -212,6 +219,235 @@ async def celebrity_websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         logger.error(f"Celebrity WebSocket error: {e}")
         await websocket.close()
+
+
+# === 数字人视频相关API ===
+
+class VideoGenerateRequest(BaseModel):
+    """视频生成请求"""
+    text: str
+    audio_url: Optional[str] = None
+    sync: bool = True
+
+
+@celebrity_app.post("/digital-human/generate-video")
+async def generate_digital_human_video(request: VideoGenerateRequest):
+    """
+    生成名人数字人视频
+
+    流程:
+    1. 如果提供了 audio_url，直接使用
+    2. 如果没提供 audio_url，先调用 TTS 生成音频
+    3. 将音频上传到 OSS 获取公网 URL
+    4. 调用火山引擎接口生成视频
+
+    Args:
+        text: 要说的文本内容
+        audio_url: 可选的音频URL
+        sync: 是否同步等待生成完成（默认True）
+
+    Returns:
+        { "video_url": "..." }
+    """
+    try:
+        logger.info(f"[Celebrity Digital Human] 收到视频生成请求: text={request.text[:50]}..., sync={request.sync}")
+
+        # 检查火山引擎配置
+        if not settings.CELEBRITY_VOLCENGINE_ACCESS_KEY or not settings.CELEBRITY_VOLCENGINE_SECRET_KEY:
+            raise HTTPException(status_code=400, detail="火山引擎未配置，请设置 CELEBRITY_VOLCENGINE_ACCESS_KEY 和 CELEBRITY_VOLCENGINE_SECRET_KEY")
+
+        # 准备音频 URL
+        audio_url = request.audio_url
+        if not audio_url:
+            # Step A: TTS 生成
+            logger.info("[Celebrity Digital Human] 正在进行 TTS 生成...")
+            audio_bytes = await synthesize_audio(request.text)
+
+            # Step B: OSS 上传
+            if not settings.CELEBRITY_OSS_ACCESS_KEY_ID or not settings.CELEBRITY_OSS_BUCKET_NAME:
+                raise HTTPException(status_code=400, detail="OSS 未配置，无法上传音频。请设置 CELEBRITY_OSS_ACCESS_KEY_ID 和 CELEBRITY_OSS_BUCKET_NAME")
+
+            logger.info("[Celebrity Digital Human] 正在上传音频到 OSS...")
+            audio_url = audio_upload_service.upload_audio(audio_bytes, file_extension="mp3")
+            logger.info(f"[Celebrity Digital Human] 音频准备就绪: {audio_url}")
+
+        # 调用火山引擎生成视频
+        if not celebrity_video_service.cached_resource_id and not settings.CELEBRITY_IMAGE_URL:
+            raise HTTPException(status_code=400, detail="未配置名人形象图片URL (CELEBRITY_IMAGE_URL)")
+
+        if request.sync:
+            # 同步调用：先创建(如需)再生成
+            if not celebrity_video_service.cached_resource_id:
+                # 获取图片的真实URL（处理OSS签名）
+                raw_image_path = settings.CELEBRITY_IMAGE_URL
+                # 如果不是HTTP URL，则通过OSS生成签名URL
+                if not raw_image_path.startswith("http"):
+                    image_url = audio_upload_service.get_file_url(raw_image_path)
+                else:
+                    image_url = raw_image_path
+
+                await celebrity_video_service.create_avatar(image_url)
+
+            video_url = await celebrity_video_service.generate_video(audio_url)
+
+            # 将火山引擎URL转换为代理URL，解决CORS问题
+            from urllib.parse import quote
+            proxy_url = f"/celebrity/digital-human/proxy-video?url={quote(video_url)}"
+            logger.info(f"[Celebrity Digital Human] 原始URL: {video_url}")
+            logger.info(f"[Celebrity Digital Human] 代理URL: {proxy_url}")
+
+            return {"video_url": proxy_url}
+        else:
+            video_url = await celebrity_video_service.generate_video(audio_url)
+
+            from urllib.parse import quote
+            proxy_url = f"/celebrity/digital-human/proxy-video?url={quote(video_url)}"
+
+            return {"video_url": proxy_url}
+
+    except Exception as e:
+        logger.error(f"[Celebrity Digital Human] 视频生成失败: {e}")
+        raise HTTPException(status_code=500, detail=f"视频生成失败: {str(e)}")
+
+
+@celebrity_app.get("/digital-human/proxy-video")
+async def proxy_video(url: str):
+    """
+    视频代理端点 - 解决CORS问题
+
+    通过后端下载火山引擎视频并转发给前端，绕过CORS限制
+
+    Args:
+        url: 火山引擎视频URL
+
+    Returns:
+        StreamingResponse: 视频流
+    """
+    try:
+        logger.info(f"[Celebrity Video Proxy] 代理请求: {url[:100]}...")
+
+        # 定义异步生成器
+        async def iterfile():
+            async with httpx.AsyncClient() as client:
+                # 开启流式下载，timeout设置长一点防止大视频断开
+                async with client.stream("GET", url, timeout=60.0) as response:
+                    if response.status_code != 200:
+                        logger.error(f"代理视频失败，状态码: {response.status_code}")
+                        # 这里不能 raise HTTPException，因为响应已经开始了，只能中断流
+                        return
+
+                    # 转发数据块
+                    async for chunk in response.aiter_bytes(chunk_size=8192):
+                        yield chunk
+
+        # 注意：为了获取 header 信息，我们需要先发起一个 HEAD 请求或者简化处理
+        # 简单起见，这里直接返回流，浏览器会自动处理 Content-Type
+        return StreamingResponse(
+            iterfile(),
+            media_type="video/mp4" 
+        )
+
+    except Exception as e:
+        logger.error(f"[Celebrity Video Proxy] 代理失败: {e}")
+        # 如果连接还没建立，可以返回 500
+        raise HTTPException(status_code=500, detail=f"视频代理失败: {str(e)}")
+
+
+@celebrity_app.api_route("/digital-human/proxy-video", methods=["GET", "HEAD"])
+async def proxy_video(url: str, request: Request):
+    """
+    视频代理端点 (修复版)
+    1. 支持 302 重定向
+    2. 支持 HEAD 请求 (解决 405 错误)
+    3. 透传 Content-Type 和 Content-Length
+    """
+    try:
+        if not url:
+             raise HTTPException(status_code=400, detail="Missing URL")
+             
+        logger.info(f"[Celebrity Video Proxy] ({request.method}) 代理请求: {url[:60]}...")
+
+        # 1. 配置 Client 自动跟随重定向 (解决 302 错误)
+        async with httpx.AsyncClient(follow_redirects=True, verify=False) as client:
+            
+            # 如果是 HEAD 请求，只获取 Header 不下载内容
+            if request.method == "HEAD":
+                resp = await client.head(url, timeout=10.0)
+                headers = {
+                    "Content-Type": resp.headers.get("Content-Type", "video/mp4"),
+                    "Content-Length": resp.headers.get("Content-Length"),
+                    "Accept-Ranges": "bytes"
+                }
+                # 过滤掉 None 的 header
+                headers = {k: v for k, v in headers.items() if v is not None}
+                return Response(status_code=200, headers=headers)
+
+            # 2. 如果是 GET 请求，进行流式传输
+            async def iterfile():
+                try:
+                    # stream=True 配合 follow_redirects=True
+                    async with client.stream("GET", url, timeout=60.0) as response:
+                        if response.status_code >= 400:
+                            logger.error(f"代理视频源返回错误: {response.status_code}")
+                            return 
+
+                        # 转发数据块
+                        async for chunk in response.aiter_bytes(chunk_size=8192):
+                            yield chunk
+                except Exception as e:
+                    logger.error(f"流传输中断: {e}")
+
+            # 先发一个 HEAD 请求获取必要的 Response Headers (为了浏览器进度条)
+            # 注意：这里会多一次轻量请求，但能保证兼容性
+            meta_resp = await client.head(url, timeout=10.0)
+            media_type = meta_resp.headers.get("Content-Type", "video/mp4")
+            content_length = meta_resp.headers.get("Content-Length")
+            
+            headers = {"Accept-Ranges": "bytes"}
+            if content_length:
+                headers["Content-Length"] = content_length
+
+            return StreamingResponse(
+                iterfile(),
+                media_type=media_type,
+                headers=headers
+            )
+
+    except Exception as e:
+        logger.error(f"[Celebrity Video Proxy] 代理失败: {e}")
+        raise HTTPException(status_code=500, detail=f"视频代理失败: {str(e)}")
+
+
+@celebrity_app.post("/digital-human/transcribe-audio")
+async def transcribe_audio_endpoint(file: UploadFile = File(...)):
+    """
+    语音识别端点 - 将音频转换为文本
+
+    Args:
+        file: 音频文件
+
+    Returns:
+        { "text": "识别出的文本" }
+    """
+    try:
+        logger.info(f"[Celebrity Audio Transcribe] 收到音频文件: {file.filename}")
+
+        # 读取文件内容
+        file_content = await file.read()
+
+        # 获取文件扩展名
+        file_extension = file.filename.split('.')[-1] if '.' in file.filename else 'wav'
+
+        # 调用语音识别
+        text = await transcribe_audio(file_content, file_extension)
+
+        logger.info(f"[Celebrity Audio Transcribe] 识别成功: {text}")
+
+        return {"text": text}
+
+    except Exception as e:
+        logger.error(f"[Celebrity Audio Transcribe] 识别失败: {e}")
+        raise HTTPException(status_code=500, detail=f"语音识别失败: {str(e)}")
 
 
 def init_celebrity_tables():

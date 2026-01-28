@@ -57,6 +57,40 @@ function useCelebrityWebSocket(selectedCelebrities, chatMode) {
           }
         ]);
       }
+    } else if (type === 'audio_ready') {
+      // 处理音频就绪消息
+      console.log(`[Celebrity Audio] 收到音频: ${content}`);
+      setMessages((prev) => {
+        // 找到最后一条来自该发送者的消息，添加音频URL
+        const newMessages = [...prev];
+        for (let i = newMessages.length - 1; i >= 0; i--) {
+          if (newMessages[i].sender === sender && !newMessages[i].isUser) {
+            newMessages[i] = {
+              ...newMessages[i],
+              audioUrl: content
+            };
+            break;
+          }
+        }
+        return newMessages;
+      });
+    } else if (type === 'video_ready') {
+      // 处理视频就绪消息
+      console.log(`[Celebrity Video] 收到视频: ${content}`);
+      setMessages((prev) => {
+        // 找到最后一条来自该发送者的消息，添加视频URL
+        const newMessages = [...prev];
+        for (let i = newMessages.length - 1; i >= 0; i--) {
+          if (newMessages[i].sender === sender && !newMessages[i].isUser) {
+            newMessages[i] = {
+              ...newMessages[i],
+              videoUrl: content
+            };
+            break;
+          }
+        }
+        return newMessages;
+      });
     } else if (type === 'error') {
       setMessages((prev) => [
         ...prev,
