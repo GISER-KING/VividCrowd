@@ -7,7 +7,9 @@ import {
 import SendIcon from '@mui/icons-material/Send';
 import PersonIcon from '@mui/icons-material/Person';
 import DeleteIcon from '@mui/icons-material/Delete';
+import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import DigitalCustomerUpload from '../components/digital_customer/DigitalCustomerUpload';
+import AudioInput from '../components/common/AudioInput';
 import { CONFIG } from '../config';
 
 function DigitalCustomerPage() {
@@ -65,25 +67,31 @@ function DigitalCustomerPage() {
       const data = JSON.parse(event.data);
 
       if (data.type === 'stream_start') {
-        setTypingStatus(`${data.sender} 正在输入...`);
+        // setTypingStatus(`${data.sender} 正在输入...`);
       } else if (data.type === 'stream_chunk') {
-        setMessages(prev => {
-          // 非流式模式下，chunk 包含完整回复
-          // 如果上一条是正在输入的消息（isStreaming=true），则替换它
-          const lastMsg = prev[prev.length - 1];
-          if (lastMsg && lastMsg.sender === data.sender && lastMsg.isStreaming) {
-            return [...prev.slice(0, -1), {
-              ...lastMsg,
-              content: data.content // 直接替换为完整内容
-            }];
-          } else {
-            return [...prev, {
-              sender: data.sender,
-              content: data.content,
-              isUser: false,
-              isStreaming: true
-            }];
-          }
+        // 先获取音频，准备播放
+        const text = data.content;
+        
+        // 异步获取音频并播放，播放开始后再显示文字
+        playAudio(text).finally(() => {
+            setMessages(prev => {
+              // 非流式模式下，chunk 包含完整回复
+              // 如果上一条是正在输入的消息（isStreaming=true），则替换它
+              const lastMsg = prev[prev.length - 1];
+              if (lastMsg && lastMsg.sender === data.sender && lastMsg.isStreaming) {
+                return [...prev.slice(0, -1), {
+                  ...lastMsg,
+                  content: data.content // 直接替换为完整内容
+                }];
+              } else {
+                return [...prev, {
+                  sender: data.sender,
+                  content: data.content,
+                  isUser: false,
+                  isStreaming: true
+                }];
+              }
+            });
         });
       } else if (data.type === 'stream_end') {
         setTypingStatus('');
@@ -178,6 +186,28 @@ function DigitalCustomerPage() {
 
   const handleUploadSuccess = (newCustomer) => {
     setCustomers(prev => [...prev, newCustomer]);
+  };
+
+  const playAudio = async (text) => {
+    if (!text) return;
+    try {
+        const formData = new FormData();
+        formData.append('text', text);
+        formData.append('voice', 'longxiaochun');
+
+        const response = await fetch(`${CONFIG.API_BASE_URL}/digital-customer/audio/synthesize`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (response.ok) {
+            const blob = await response.blob();
+            const audio = new Audio(URL.createObjectURL(blob));
+            await audio.play();
+        }
+    } catch (err) {
+        console.error("TTS failed", err);
+    }
   };
 
   return (
@@ -351,6 +381,19 @@ function DigitalCustomerPage() {
                             {msg.sender}
                           </Typography>
                           <Typography sx={{ whiteSpace: 'pre-wrap' }}>{msg.content}</Typography>
+                          {/* 播放按钮 */}
+                          {msg.sender !== '销售人员' && !msg.isUser && !msg.isError && (
+                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 0.5 }}>
+                                <IconButton 
+                                    size="small" 
+                                    onClick={() => playAudio(msg.content)} 
+                                    sx={{ color: 'rgba(255,255,255,0.7)', '&:hover': { color: '#fff' } }}
+                                    title="播放语音"
+                                >
+                                    <VolumeUpIcon fontSize="small" />
+                                </IconButton>
+                            </Box>
+                          )}
                         </Paper>
                       </Box>
                     ))}
@@ -443,6 +486,7 @@ function DigitalCustomerPage() {
           }}
         >
           <Box sx={{ display: 'flex', gap: 1 }}>
+            <AudioInput onTextRecognized={(text) => setInputMessage(prev => prev + text)} />
             <TextField
               fullWidth
               multiline

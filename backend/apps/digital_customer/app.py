@@ -6,7 +6,7 @@ import json
 import shutil
 import asyncio
 from typing import List
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, HTTPException, Response
 from sqlalchemy import select
 from loguru import logger
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -18,6 +18,7 @@ from .services.customer_orchestrator import CustomerOrchestratorService
 from .services.session_manager import CustomerSessionManager
 from .services.profile_parser import profile_parser_service
 from .services.chunking_service import chunking_service
+from .services.audio_service import transcribe_audio, synthesize_audio
 from backend.apps.customer_service.services.embedding_service import embedding_service
 
 # 创建子应用
@@ -29,6 +30,34 @@ scheduler = AsyncIOScheduler()
 # 文件上传目录
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+@digital_customer_app.post("/audio/transcribe")
+async def transcribe_audio_endpoint(file: UploadFile = File(...)):
+    """音频转文字 (ASR)"""
+    try:
+        content = await file.read()
+        # 获取扩展名 (如 wav, webm)
+        extension = file.filename.split(".")[-1] if "." in file.filename else "wav"
+        text = await transcribe_audio(content, extension)
+        return {"text": text}
+    except Exception as e:
+        logger.error(f"Transcription error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@digital_customer_app.post("/audio/synthesize")
+async def synthesize_audio_endpoint(
+    text: str = Form(...),
+    voice: str = Form("longxiaochun")
+):
+    """文字转音频 (TTS)"""
+    try:
+        audio_data = await synthesize_audio(text, voice)
+        return Response(content=audio_data, media_type="audio/mpeg")
+    except Exception as e:
+        logger.error(f"Synthesis error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @digital_customer_app.get("/", response_model=List[CustomerProfileResponse])
