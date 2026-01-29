@@ -18,6 +18,9 @@ export const CONFIG = {
     // 数字客户 WebSocket 地址
     DIGITAL_CUSTOMER_WS_URL: `${getWsProtocol()}//${getWsHost()}/api/digital-customer/ws`,
 
+    // 培训 WebSocket 地址
+    TRAINING_WS_URL: `${getWsProtocol()}//${getWsHost()}/api/digital-customer/training/ws`,
+
     // API 基础地址（通过Vite代理转发）
     API_BASE_URL: '/api',
 

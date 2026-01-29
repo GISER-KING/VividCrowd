@@ -8,21 +8,42 @@ import SendIcon from '@mui/icons-material/Send';
 import PersonIcon from '@mui/icons-material/Person';
 import DeleteIcon from '@mui/icons-material/Delete';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
+import SchoolIcon from '@mui/icons-material/School';
+import ExitToAppIcon from '@mui/icons-material/ExitToApp';
+import { useNavigate } from 'react-router-dom';
 import DigitalCustomerUpload from '../components/digital_customer/DigitalCustomerUpload';
 import AudioInput from '../components/common/AudioInput';
+import StageIndicator from '../components/training/StageIndicator';
+import RealTimeFeedback from '../components/training/RealTimeFeedback';
+import SalesCopilot from '../components/training/SalesCopilot';
 import { CONFIG } from '../config';
 
 function DigitalCustomerPage() {
+  const navigate = useNavigate();
   const [customers, setCustomers] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [inputMessage, setInputMessage] = useState('');
   const [messages, setMessages] = useState([]);
-  const [activeTab, setActiveTab] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [typingStatus, setTypingStatus] = useState('');
+  const [trainingDialog, setTrainingDialog] = useState(false);
+  const [traineeName, setTraineeName] = useState('');
+
+  // Training mode states
+  const [trainingMode, setTrainingMode] = useState(false);
+  const [trainingSessionId, setTrainingSessionId] = useState(null);
+  const [currentStage, setCurrentStage] = useState(1);
+  const [currentRound, setCurrentRound] = useState(0);
+  const [completedStages, setCompletedStages] = useState([]);
+  const [realtimeAnalysis, setRealtimeAnalysis] = useState(null);
+  const [stageEvaluation, setStageEvaluation] = useState(null);
+  const [trainingComplete, setTrainingComplete] = useState(false);
+  const [finalEvaluation, setFinalEvaluation] = useState(null);
+
   const chatContainerRef = useRef(null);
   const wsRef = useRef(null);
+  const currentResponseRef = useRef('');
 
   useEffect(() => {
     fetchCustomers();
@@ -51,71 +72,135 @@ function DigitalCustomerPage() {
     }
   };
 
-  const connectWebSocket = () => {
-    if (wsRef.current) {
-      wsRef.current.close();
-    }
+  const handleNormalMessage = (data) => {
+    // 普通模式已移除，此函数保留以防万一
+    console.warn('Normal message received but normal mode is disabled');
+  };
 
-    const ws = new WebSocket(CONFIG.DIGITAL_CUSTOMER_WS_URL);
+  const handleTrainingMessage = (data) => {
+    switch (data.type) {
+      case 'analysis':
+        // 实时分析反馈
+        setRealtimeAnalysis({
+          quality: data.quality,
+          issues: data.issues || [],
+          suggestions: data.suggestions || []
+        });
+        setCurrentStage(data.stage);
+        setCurrentRound(data.round);
+        break;
 
-    ws.onopen = () => {
-      setIsConnected(true);
-      console.log('Digital Customer WebSocket connected');
-    };
+      case 'stream_start':
+        // 客户开始回复 - 初始化缓冲区
+        currentResponseRef.current = '';
+        setMessages(prev => [...prev, {
+          sender: selectedCustomer.name,
+          content: '正在思考...',
+          isUser: false,
+          isStreaming: true,
+          isThinking: true
+        }]);
+        break;
 
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+      case 'stream_chunk':
+        // 流式内容 - 累积文本但不立即显示
+        currentResponseRef.current += data.content;
+        break;
 
-      if (data.type === 'stream_start') {
-        // setTypingStatus(`${data.sender} 正在输入...`);
-      } else if (data.type === 'stream_chunk') {
-        // 先获取音频，准备播放
-        const text = data.content;
+      case 'stream_end':
+        // 流式结束 - 生成音频并同步显示文字
+        const fullText = currentResponseRef.current;
         
-        // 异步获取音频并播放，播放开始后再显示文字
-        playAudio(text).finally(() => {
-            setMessages(prev => {
-              // 非流式模式下，chunk 包含完整回复
-              // 如果上一条是正在输入的消息（isStreaming=true），则替换它
-              const lastMsg = prev[prev.length - 1];
-              if (lastMsg && lastMsg.sender === data.sender && lastMsg.isStreaming) {
-                return [...prev.slice(0, -1), {
-                  ...lastMsg,
-                  content: data.content // 直接替换为完整内容
-                }];
-              } else {
-                return [...prev, {
-                  sender: data.sender,
-                  content: data.content,
-                  isUser: false,
-                  isStreaming: true
-                }];
-              }
-            });
+        // 播放音频，成功开始播放后显示文字
+        playAudio(fullText).then(() => {
+          setMessages(prev => {
+            const lastMsg = prev[prev.length - 1];
+            if (lastMsg && lastMsg.isStreaming) {
+              return [...prev.slice(0, -1), { 
+                ...lastMsg, 
+                content: fullText, 
+                isStreaming: false,
+                isThinking: false
+              }];
+            }
+            return prev;
+          });
+        }).catch(err => {
+          console.error("Audio playback failed:", err);
+          // 音频播放失败也要显示文字
+          setMessages(prev => {
+            const lastMsg = prev[prev.length - 1];
+            if (lastMsg && lastMsg.isStreaming) {
+              return [...prev.slice(0, -1), { 
+                ...lastMsg, 
+                content: fullText, 
+                isStreaming: false,
+                isThinking: false
+              }];
+            }
+            return prev;
+          });
         });
-      } else if (data.type === 'stream_end') {
-        setTypingStatus('');
-        setMessages(prev => {
-          const lastMsg = prev[prev.length - 1];
-          if (lastMsg && lastMsg.isStreaming) {
-            return [...prev.slice(0, -1), { ...lastMsg, isStreaming: false }];
-          }
-          return prev;
+        break;
+
+      case 'stage_complete':
+        // 阶段完成
+        setStageEvaluation({
+          stage: data.stage,
+          score: data.score,
+          feedback: data.feedback
         });
-      } else if (data.type === 'error') {
-        setTypingStatus('');
+        setCompletedStages(prev => [...prev, data.stage]);
+        break;
+
+      case 'training_complete':
+        // 培训完成
+        setTrainingComplete(true);
+        setFinalEvaluation(data.evaluation);
+        break;
+
+      case 'error':
+        // 错误消息
         setMessages(prev => [...prev, {
           sender: 'System',
           content: data.content,
           isUser: false,
           isError: true
         }]);
-      }
+        break;
+
+      default:
+        break;
+    }
+  };
+
+  const connectWebSocket = (isTraining = false, sessionId = null) => {
+    if (wsRef.current) {
+      wsRef.current.close();
+    }
+
+    // 只支持培训模式的 WebSocket 连接
+    if (!isTraining || !sessionId) {
+      console.error('WebSocket connection requires training mode and session ID');
+      return;
+    }
+
+    const wsUrl = `${CONFIG.TRAINING_WS_URL}/${sessionId}`;
+    const ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      setIsConnected(true);
+      console.log('Training WebSocket connected');
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      handleTrainingMessage(data);
     };
 
     ws.onclose = () => {
       setIsConnected(false);
-      console.log('Digital Customer WebSocket disconnected');
+      console.log('WebSocket disconnected');
     };
 
     ws.onerror = (error) => {
@@ -128,16 +213,14 @@ function DigitalCustomerPage() {
 
   const handleCustomerSelect = (customer) => {
     setSelectedCustomer(customer);
-    setMessages([]);
-    setTypingStatus('');
-    connectWebSocket();
+    // 客户选择后不再自动连接，只在开始培训时连接
   };
 
   const handleSendMessage = () => {
     if (inputMessage.trim() === '' || !selectedCustomer) return;
 
     if (!isConnected) {
-      connectWebSocket();
+      connectWebSocket(true, trainingSessionId);
       return;
     }
 
@@ -148,10 +231,9 @@ function DigitalCustomerPage() {
     };
     setMessages(prev => [...prev, userMessage]);
 
+    // 培训模式：只发送消息内容
     wsRef.current.send(JSON.stringify({
-      message: inputMessage,
-      customer_ids: [selectedCustomer.id],
-      mode: 'private'
+      message: inputMessage
     }));
 
     setInputMessage('');
@@ -186,6 +268,89 @@ function DigitalCustomerPage() {
 
   const handleUploadSuccess = (newCustomer) => {
     setCustomers(prev => [...prev, newCustomer]);
+  };
+
+  const handleStartTraining = () => {
+    if (!selectedCustomer) {
+      alert('请先选择一个客户');
+      return;
+    }
+    setTrainingDialog(true);
+  };
+
+  const handleTrainingConfirm = async () => {
+    if (!traineeName.trim()) {
+      alert('请输入您的姓名');
+      return;
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append('trainee_id', Date.now().toString());
+      formData.append('trainee_name', traineeName);
+      formData.append('customer_id', selectedCustomer.id);
+
+      const response = await fetch(
+        `${CONFIG.API_BASE_URL}/digital-customer/training/sessions/start`,
+        {
+          method: 'POST',
+          body: formData,
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+
+        // 进入培训模式
+        setTrainingMode(true);
+        setTrainingSessionId(data.session_id);
+        setCurrentStage(1);
+        setCurrentRound(0);
+        setCompletedStages([]);
+        setRealtimeAnalysis(null);
+        setStageEvaluation(null);
+        setTrainingComplete(false);
+        setFinalEvaluation(null);
+        setMessages([]);  // 清空消息
+
+        // 关闭对话框
+        setTrainingDialog(false);
+        setTraineeName('');
+
+        // 连接培训 WebSocket
+        connectWebSocket(true, data.session_id);
+      } else {
+        alert('启动培训失败');
+      }
+    } catch (err) {
+      console.error('Failed to start training:', err);
+      alert('启动培训失败');
+    }
+  };
+
+  const handleExitTraining = () => {
+    // 确认退出
+    if (!window.confirm('确定要退出培训吗？培训进度将不会保存。')) {
+      return;
+    }
+
+    // 重置培训状态
+    setTrainingMode(false);
+    setTrainingSessionId(null);
+    setCurrentStage(1);
+    setCurrentRound(0);
+    setCompletedStages([]);
+    setRealtimeAnalysis(null);
+    setStageEvaluation(null);
+    setTrainingComplete(false);
+    setFinalEvaluation(null);
+    setMessages([]);
+
+    // 关闭 WebSocket 连接
+    if (wsRef.current) {
+      wsRef.current.close();
+    }
+    setIsConnected(false);
   };
 
   const playAudio = async (text) => {
@@ -257,88 +422,83 @@ function DigitalCustomerPage() {
               </Typography>
             </Box>
           </Box>
-          {selectedCustomer && (
-            <Chip
-              label={`当前客户: ${selectedCustomer.name}`}
-              sx={{
-                background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
-                color: '#fff',
-                fontWeight: 600,
-              }}
-            />
-          )}
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            {selectedCustomer && (
+              <Chip
+                label={`当前客户: ${selectedCustomer.name}`}
+                sx={{
+                  background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+                  color: '#fff',
+                  fontWeight: 600,
+                }}
+              />
+            )}
+            {trainingMode ? (
+              <Button
+                startIcon={<ExitToAppIcon />}
+                onClick={handleExitTraining}
+                variant="contained"
+                size="small"
+                sx={{
+                  background: 'linear-gradient(135deg, #f44336 0%, #e91e63 100%)',
+                  color: '#fff',
+                  fontWeight: 600,
+                  '&:hover': {
+                    background: 'linear-gradient(135deg, #e91e63 0%, #f44336 100%)',
+                  },
+                }}
+              >
+                退出培训
+              </Button>
+            ) : (
+              <Button
+                startIcon={<SchoolIcon />}
+                onClick={handleStartTraining}
+                variant="contained"
+                size="small"
+                sx={{
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: '#fff',
+                  fontWeight: 600,
+                  '&:hover': {
+                    background: 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)',
+                  },
+                }}
+              >
+                开始培训
+              </Button>
+            )}
+          </Box>
         </Box>
 
-        <Tabs
-          value={activeTab}
-          onChange={(e, v) => setActiveTab(v)}
-          sx={{
-            minHeight: 40,
-            '& .MuiTab-root': {
-              color: 'rgba(255,255,255,0.5)',
-              minHeight: 40,
-              '&.Mui-selected': { color: '#fff' },
-            },
-            '& .MuiTabs-indicator': {
-              background: 'linear-gradient(90deg, #667eea, #764ba2)',
-            },
-          }}
-        >
-          <Tab label="对话训练" />
-          <Tab label="客户管理" />
-        </Tabs>
+        {trainingMode ? (
+          <StageIndicator currentStage={currentStage} completedStages={completedStages} />
+        ) : null}
       </Paper>
 
       {/* Content Area - Scrollable */}
       <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex' }}>
-        {activeTab === 0 ? (
+        {trainingMode ? (
           <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-            {/* Customer List */}
-            <Paper
-              elevation={0}
+            
+            {/* Sales Copilot - Left Side */}
+            <Box
               sx={{
-                width: 280,
+                width: 350, // Slightly wider for chat
                 flexShrink: 0,
+                overflow: 'hidden', // Copilot handles its own scroll
+                p: 2,
                 background: 'rgba(255, 255, 255, 0.02)',
                 borderRight: '1px solid rgba(255, 255, 255, 0.08)',
-                overflow: 'auto',
+                display: { xs: 'none', md: 'block' } // Hide on small screens
               }}
             >
-              <Box sx={{ p: 2 }}>
-                <Typography variant="subtitle2" sx={{ color: 'rgba(255,255,255,0.7)', mb: 1 }}>
-                  选择客户
-                </Typography>
-                <List>
-                  {customers.map((customer) => (
-                    <ListItem key={customer.id} disablePadding sx={{ mb: 1 }}>
-                      <ListItemButton
-                        selected={selectedCustomer?.id === customer.id}
-                        onClick={() => handleCustomerSelect(customer)}
-                        sx={{
-                          borderRadius: '12px',
-                          '&.Mui-selected': {
-                            background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.3) 0%, rgba(118, 75, 162, 0.3) 100%)',
-                            border: '1px solid rgba(102, 126, 234, 0.5)',
-                          },
-                        }}
-                      >
-                        <ListItemAvatar>
-                          <Avatar sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
-                            <PersonIcon />
-                          </Avatar>
-                        </ListItemAvatar>
-                        <ListItemText
-                          primary={customer.name}
-                          secondary={customer.occupation || '客户'}
-                          primaryTypographyProps={{ sx: { color: '#fff', fontWeight: 600 } }}
-                          secondaryTypographyProps={{ sx: { color: 'rgba(255,255,255,0.5)' } }}
-                        />
-                      </ListItemButton>
-                    </ListItem>
-                  ))}
-                </List>
-              </Box>
-            </Paper>
+              <SalesCopilot 
+                currentStage={currentStage} 
+                suggestions={realtimeAnalysis?.suggestions || []}
+                onUseSuggestion={(text) => setInputMessage(text)}
+              />
+            </Box>
 
             {/* Chat Area */}
             <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -384,9 +544,9 @@ function DigitalCustomerPage() {
                           {/* 播放按钮 */}
                           {msg.sender !== '销售人员' && !msg.isUser && !msg.isError && (
                             <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 0.5 }}>
-                                <IconButton 
-                                    size="small" 
-                                    onClick={() => playAudio(msg.content)} 
+                                <IconButton
+                                    size="small"
+                                    onClick={() => playAudio(msg.content)}
                                     sx={{ color: 'rgba(255,255,255,0.7)', '&:hover': { color: '#fff' } }}
                                     title="播放语音"
                                 >
@@ -407,10 +567,28 @@ function DigitalCustomerPage() {
               ) : (
                 <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <Typography sx={{ color: 'rgba(255,255,255,0.5)' }}>
-                    请从左侧选择一个客户开始对话训练
+                    培训会话加载中...
                   </Typography>
                 </Box>
               )}
+            </Box>
+
+            {/* Real-time Feedback Panel - Only in training mode */}
+            <Box
+              sx={{
+                width: 360,
+                flexShrink: 0,
+                overflow: 'auto',
+                p: 2,
+                background: 'rgba(255, 255, 255, 0.02)',
+                borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
+              }}
+            >
+              <RealTimeFeedback
+                analysis={realtimeAnalysis}
+                currentStage={currentStage}
+                currentRound={currentRound}
+              />
             </Box>
           </Box>
         ) : (
@@ -447,9 +625,22 @@ function DigitalCustomerPage() {
                         }
                         sx={{
                           mb: 1,
-                          background: 'rgba(255, 255, 255, 0.05)',
+                          background: selectedCustomer?.id === customer.id
+                            ? 'linear-gradient(135deg, rgba(102, 126, 234, 0.3) 0%, rgba(118, 75, 162, 0.3) 100%)'
+                            : 'rgba(255, 255, 255, 0.05)',
                           borderRadius: '12px',
+                          border: selectedCustomer?.id === customer.id
+                            ? '1px solid rgba(102, 126, 234, 0.5)'
+                            : '1px solid transparent',
+                          cursor: 'pointer',
+                          transition: 'all 0.3s ease',
+                          '&:hover': {
+                            background: selectedCustomer?.id === customer.id
+                              ? 'linear-gradient(135deg, rgba(102, 126, 234, 0.4) 0%, rgba(118, 75, 162, 0.4) 100%)'
+                              : 'rgba(255, 255, 255, 0.08)',
+                          },
                         }}
+                        onClick={() => setSelectedCustomer(customer)}
                       >
                         <ListItemAvatar>
                           <Avatar sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
@@ -472,8 +663,8 @@ function DigitalCustomerPage() {
         )}
       </Box>
 
-      {/* Input Area - Fixed */}
-      {activeTab === 0 && selectedCustomer && (
+      {/* Input Area - Fixed - Only in training mode */}
+      {trainingMode && selectedCustomer && (
         <Paper
           elevation={0}
           sx={{
@@ -530,6 +721,261 @@ function DigitalCustomerPage() {
         <DialogActions>
           <Button onClick={() => setDeleteTarget(null)}>取消</Button>
           <Button onClick={handleDelete} color="error">删除</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Training Start Dialog */}
+      <Dialog
+        open={trainingDialog}
+        onClose={() => setTrainingDialog(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            background: 'rgba(26, 26, 46, 0.95)',
+            backdropFilter: 'blur(20px)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '20px',
+          },
+        }}
+      >
+        <DialogTitle sx={{ color: '#fff', textAlign: 'center' }}>
+          <SchoolIcon sx={{ fontSize: 48, color: '#667eea', mb: 1 }} />
+          <Typography variant="h5" sx={{ fontWeight: 700 }}>
+            开始销售培训
+          </Typography>
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 3, textAlign: 'center' }}>
+            您将与 <strong style={{ color: '#43e97b' }}>{selectedCustomer?.name}</strong> 进行销售培训对话
+          </Typography>
+          <TextField
+            fullWidth
+            label="您的姓名"
+            value={traineeName}
+            onChange={(e) => setTraineeName(e.target.value)}
+            placeholder="请输入您的姓名"
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                background: 'rgba(255, 255, 255, 0.05)',
+                color: '#fff',
+                '& fieldset': { borderColor: 'rgba(255, 255, 255, 0.2)' },
+                '&:hover fieldset': { borderColor: 'rgba(102, 126, 234, 0.5)' },
+                '&.Mui-focused fieldset': { borderColor: '#667eea' },
+              },
+              '& .MuiInputLabel-root': {
+                color: 'rgba(255, 255, 255, 0.7)',
+                '&.Mui-focused': { color: '#667eea' },
+              },
+            }}
+          />
+          <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.5)', mt: 2, display: 'block' }}>
+            培训将包含5个阶段，系统会实时评价您的销售表现
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 3, flexDirection: 'column', gap: 1 }}>
+          <Button
+            onClick={handleTrainingConfirm}
+            variant="contained"
+            fullWidth
+            sx={{
+              py: 1.5,
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              fontWeight: 600,
+              borderRadius: '12px',
+              '&:hover': {
+                background: 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)',
+              },
+            }}
+          >
+            开始培训
+          </Button>
+          <Button
+            onClick={() => {
+              setTrainingDialog(false);
+              setTraineeName('');
+            }}
+            variant="outlined"
+            fullWidth
+            sx={{
+              py: 1.5,
+              borderColor: 'rgba(255, 255, 255, 0.2)',
+              color: '#fff',
+              borderRadius: '12px',
+            }}
+          >
+            取消
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Stage Completion Dialog */}
+      <Dialog
+        open={!!stageEvaluation}
+        onClose={() => setStageEvaluation(null)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            background: 'rgba(26, 26, 46, 0.95)',
+            backdropFilter: 'blur(20px)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '20px',
+          },
+        }}
+      >
+        <DialogTitle sx={{ color: '#fff', textAlign: 'center' }}>
+          <Box
+            sx={{
+              width: 60,
+              height: 60,
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 16px',
+            }}
+          >
+            <Typography variant="h4" sx={{ color: '#fff', fontWeight: 700 }}>
+              {stageEvaluation?.stage}
+            </Typography>
+          </Box>
+          <Typography variant="h5" sx={{ fontWeight: 700 }}>
+            阶段 {stageEvaluation?.stage} 完成
+          </Typography>
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="subtitle2" sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 1 }}>
+              得分
+            </Typography>
+            <Typography variant="h3" sx={{ color: '#43e97b', fontWeight: 700 }}>
+              {stageEvaluation?.score}/5
+            </Typography>
+          </Box>
+          <Box>
+            <Typography variant="subtitle2" sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 1 }}>
+              反馈
+            </Typography>
+            <Typography sx={{ color: '#fff', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+              {stageEvaluation?.feedback}
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 3 }}>
+          <Button
+            onClick={() => setStageEvaluation(null)}
+            variant="contained"
+            fullWidth
+            sx={{
+              py: 1.5,
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              fontWeight: 600,
+              borderRadius: '12px',
+              '&:hover': {
+                background: 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)',
+              },
+            }}
+          >
+            继续培训
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Training Completion Dialog */}
+      <Dialog
+        open={trainingComplete}
+        onClose={() => setTrainingComplete(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            background: 'rgba(26, 26, 46, 0.95)',
+            backdropFilter: 'blur(20px)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '20px',
+          },
+        }}
+      >
+        <DialogTitle sx={{ color: '#fff', textAlign: 'center' }}>
+          <Box
+            sx={{
+              width: 80,
+              height: 80,
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 16px',
+            }}
+          >
+            <SchoolIcon sx={{ fontSize: 48, color: '#fff' }} />
+          </Box>
+          <Typography variant="h5" sx={{ fontWeight: 700 }}>
+            培训完成！
+          </Typography>
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 3, textAlign: 'center' }}>
+            恭喜您完成了所有5个阶段的销售培训
+          </Typography>
+          {finalEvaluation && (
+            <Box sx={{ textAlign: 'center', mb: 2 }}>
+              <Typography variant="subtitle2" sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 1 }}>
+                总分
+              </Typography>
+              <Typography variant="h2" sx={{ color: '#43e97b', fontWeight: 700 }}>
+                {finalEvaluation.scores?.total_score || 0}/25
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.5)', mt: 1 }}>
+                {finalEvaluation.scores?.performance_level === 'excellent' && '优秀'}
+                {finalEvaluation.scores?.performance_level === 'good' && '良好'}
+                {finalEvaluation.scores?.performance_level === 'average' && '一般'}
+                {finalEvaluation.scores?.performance_level === 'poor' && '需改进'}
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 3, flexDirection: 'column', gap: 1 }}>
+          <Button
+            onClick={() => {
+              setTrainingComplete(false);
+              if (finalEvaluation?.session_id) {
+                navigate(`/training/evaluation?session_id=${finalEvaluation.session_id}`);
+              }
+            }}
+            variant="contained"
+            fullWidth
+            sx={{
+              py: 1.5,
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              fontWeight: 600,
+              borderRadius: '12px',
+              '&:hover': {
+                background: 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)',
+              },
+            }}
+          >
+            查看详细报告
+          </Button>
+          <Button
+            onClick={() => {
+              setTrainingComplete(false);
+              handleExitTraining();
+            }}
+            variant="outlined"
+            fullWidth
+            sx={{
+              py: 1.5,
+              borderColor: 'rgba(255, 255, 255, 0.2)',
+              color: '#fff',
+              borderRadius: '12px',
+            }}
+          >
+            返回主界面
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

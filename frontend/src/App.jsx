@@ -6,6 +6,7 @@ import GroupChatPage from './pages/GroupChatPage';
 import CelebrityPage from './pages/CelebrityPage';
 import CustomerServicePage from './pages/CustomerServicePage';
 import DigitalCustomerPage from './pages/DigitalCustomerPage';
+import EvaluationReportPage from './pages/Training/EvaluationReportPage';
 import ErrorBoundary from './components/ErrorBoundary';
 
 function App() {
@@ -19,6 +20,7 @@ function App() {
             <Route path="/celebrity" element={<CelebrityPage />} />
             <Route path="/customer-service" element={<CustomerServicePage />} />
             <Route path="/digital-customer" element={<DigitalCustomerPage />} />
+            <Route path="/training/evaluation" element={<EvaluationReportPage />} />
           </Routes>
         </Box>
       </Box>

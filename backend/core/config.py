@@ -46,14 +46,14 @@ class Settings(BaseSettings):
 
     # === 数字人视频配置 ===
     # 火山引擎
-    CELEBRITY_VOLCENGINE_ACCESS_KEY: str  # 必填
-    CELEBRITY_VOLCENGINE_SECRET_KEY: str  # 必填
+    CELEBRITY_VOLCENGINE_ACCESS_KEY: str = ""  # 必填
+    CELEBRITY_VOLCENGINE_SECRET_KEY: str = ""  # 必填
     CELEBRITY_VOLCENGINE_REGION: str = "cn-north-1"
     CELEBRITY_IMAGE_URL: str = "imgs/ElonMask.jpg"
 
     # 阿里云 OSS
-    CELEBRITY_OSS_ACCESS_KEY_ID: str      # 必填
-    CELEBRITY_OSS_ACCESS_KEY_SECRET: str  # 必填
+    CELEBRITY_OSS_ACCESS_KEY_ID: str = ""     # 必填
+    CELEBRITY_OSS_ACCESS_KEY_SECRET: str = ""  # 必填
     CELEBRITY_OSS_BUCKET_NAME: str = "digitalpatient"
     CELEBRITY_OSS_ENDPOINT: str = "oss-cn-beijing.aliyuncs.com"
     CELEBRITY_OSS_AUDIO_DIR: str = "celebrity_audio"

@@ -201,6 +201,29 @@ class CSVRegistry(Base):
         }
 
 
+class SalesKnowledge(Base):
+    """销售培训知识库表 - 存储RAG用的销售知识"""
+    __tablename__ = "sales_knowledge"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    stage = Column(Integer, nullable=True)  # 适用阶段 (1-5)
+    category = Column(String(50), nullable=True)  # 类别: script/qa/sop/product
+    content = Column(Text, nullable=False)  # 文本内容
+    source_filename = Column(String(255), nullable=True)  # 来源文件名
+    embedding = Column(LargeBinary, nullable=True)  # 向量嵌入
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "stage": self.stage,
+            "category": self.category,
+            "content": self.content,
+            "source_filename": self.source_filename,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class ChatSession(Base):
     """对话会话表 - Celebrity应用的会话管理"""
     __tablename__ = "chat_sessions"
@@ -331,5 +354,187 @@ class CustomerChunk(Base):
             "chunk_text": self.chunk_text,
             "chunk_index": self.chunk_index,
             "chunk_metadata": self.chunk_metadata,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+# ==================== 销售培训评价模型 ====================
+
+class TrainingSession(Base):
+    """培训会话表 - 记录每次培训的完整过程"""
+    __tablename__ = "training_sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String(64), unique=True, nullable=False, index=True)
+
+    # 关联信息
+    trainee_id = Column(String(100), nullable=True)
+    trainee_name = Column(String(100), nullable=True)
+    customer_profile_id = Column(Integer, ForeignKey("customer_profiles.id"), nullable=False)
+
+    # 会话状态
+    current_stage = Column(Integer, default=1)
+    current_round = Column(Integer, default=0)
+    status = Column(String(20), default="in_progress")  # in_progress/completed/abandoned
+
+    # 时间记录
+    started_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+    duration_seconds = Column(Integer, nullable=True)
+
+    # 关系
+    customer_profile = relationship("CustomerProfile")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "session_id": self.session_id,
+            "trainee_id": self.trainee_id,
+            "trainee_name": self.trainee_name,
+            "customer_profile_id": self.customer_profile_id,
+            "current_stage": self.current_stage,
+            "current_round": self.current_round,
+            "status": self.status,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "duration_seconds": self.duration_seconds,
+        }
+
+
+class ConversationRound(Base):
+    """对话轮次表 - 记录每一轮对话"""
+    __tablename__ = "conversation_rounds"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(Integer, ForeignKey("training_sessions.id", ondelete="CASCADE"), nullable=False)
+
+    round_number = Column(Integer, nullable=False)
+    stage = Column(Integer, nullable=False)
+
+    # 对话内容
+    trainee_message = Column(Text, nullable=False)
+    customer_response = Column(Text, nullable=False)
+
+    # 实时分析
+    detected_quality = Column(String(50), nullable=True)
+    analysis_data = Column(JSON, nullable=True)
+
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+    # 关系
+    session = relationship("TrainingSession", backref="rounds")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "session_id": self.session_id,
+            "round_number": self.round_number,
+            "stage": self.stage,
+            "trainee_message": self.trainee_message,
+            "customer_response": self.customer_response,
+            "detected_quality": self.detected_quality,
+            "analysis_data": self.analysis_data,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+        }
+
+
+class StageEvaluation(Base):
+    """阶段评价表 - 记录每个阶段的完成情况"""
+    __tablename__ = "stage_evaluations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(Integer, ForeignKey("training_sessions.id", ondelete="CASCADE"), nullable=False)
+
+    stage_number = Column(Integer, nullable=False)
+    stage_name = Column(String(100), nullable=True)
+
+    # 任务完成度
+    task_completed = Column(Boolean, default=False)
+    completion_quality = Column(String(50), nullable=True)
+
+    # 详细评价
+    strengths = Column(JSON, nullable=True)
+    weaknesses = Column(JSON, nullable=True)
+    suggestions = Column(JSON, nullable=True)
+
+    # 评分
+    score = Column(Integer, nullable=True)
+
+    # 时间记录
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    rounds_used = Column(Integer, nullable=True)
+
+    # 关系
+    session = relationship("TrainingSession", backref="stage_evaluations")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "session_id": self.session_id,
+            "stage_number": self.stage_number,
+            "stage_name": self.stage_name,
+            "task_completed": self.task_completed,
+            "completion_quality": self.completion_quality,
+            "strengths": self.strengths,
+            "weaknesses": self.weaknesses,
+            "suggestions": self.suggestions,
+            "score": self.score,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "rounds_used": self.rounds_used,
+        }
+
+
+class FinalEvaluation(Base):
+    """最终评价表 - 整体评价报告"""
+    __tablename__ = "final_evaluations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(Integer, ForeignKey("training_sessions.id", ondelete="CASCADE"), unique=True, nullable=False)
+
+    # 5项核心任务评分
+    trust_building_score = Column(Integer, nullable=True)
+    needs_diagnosis_score = Column(Integer, nullable=True)
+    value_presentation_score = Column(Integer, nullable=True)
+    objection_handling_score = Column(Integer, nullable=True)
+    progress_management_score = Column(Integer, nullable=True)
+
+    # 总分和等级
+    total_score = Column(Integer, nullable=True)
+    performance_level = Column(String(20), nullable=True)
+
+    # 详细分析
+    overall_strengths = Column(JSON, nullable=True)
+    overall_weaknesses = Column(JSON, nullable=True)
+    key_improvements = Column(JSON, nullable=True)
+
+    # 具体指标
+    uncompleted_tasks = Column(JSON, nullable=True)
+
+    # 报告内容
+    detailed_report = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # 关系
+    session = relationship("TrainingSession", backref="final_evaluation", uselist=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "session_id": self.session_id,
+            "trust_building_score": self.trust_building_score,
+            "needs_diagnosis_score": self.needs_diagnosis_score,
+            "value_presentation_score": self.value_presentation_score,
+            "objection_handling_score": self.objection_handling_score,
+            "progress_management_score": self.progress_management_score,
+            "total_score": self.total_score,
+            "performance_level": self.performance_level,
+            "overall_strengths": self.overall_strengths,
+            "overall_weaknesses": self.overall_weaknesses,
+            "key_improvements": self.key_improvements,
+            "uncompleted_tasks": self.uncompleted_tasks,
+            "detailed_report": self.detailed_report,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

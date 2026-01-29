@@ -138,6 +138,11 @@ async def init_db():
         CustomerChunk,
         ChatSession,
         ChatMessage,
+        SalesKnowledge,
+        TrainingSession,
+        ConversationRound,
+        StageEvaluation,
+        FinalEvaluation
     )
 
     # 初始化名人数据库
@@ -165,5 +170,10 @@ async def init_db():
             CustomerProfile.__table__,
             CustomerChunk.__table__,  # ← 必须包含！否则 chunk 表不会创建
             ChatSession.__table__,
-            ChatMessage.__table__
+            ChatMessage.__table__,
+            SalesKnowledge.__table__,
+            TrainingSession.__table__,
+            ConversationRound.__table__,
+            StageEvaluation.__table__,
+            FinalEvaluation.__table__
         ])
