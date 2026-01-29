@@ -11,6 +11,10 @@ Thumbs.db
 
 # Python (Backend)
 __pycache__/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
 *.py[cod]
 *$py.class
 .pytest_cache/
@@ -32,6 +36,7 @@ yarn-error.log*
 
 # IDEs
 .vscode/
+.claude/
 .idea/
 *.suo
 *.ntvs*
@@ -43,9 +48,17 @@ yarn-error.log*
 .gemini/
 logs/
 *.log
+backend/tests/reports/*.md
 
 # Database
 *.sqlite3
+*.db
+*.db-journal
+*.db.backup
+*.bak
+
+# Data
+backend/data/
 
 # Uploads
 uploads/
