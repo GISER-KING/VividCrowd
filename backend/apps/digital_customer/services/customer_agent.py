@@ -12,7 +12,9 @@ class CustomerAgent:
 
     def __init__(self, customer: CustomerProfile, db_session: Optional[Session] = None):
         self.id = customer.id
-        self.name = customer.name
+        # 使用真实姓名（如果有），否则使用画像类型
+        self.name = customer.name if customer.name else customer.profile_type
+        self.profile_type = customer.profile_type
         self.system_prompt = customer.system_prompt or ""
         self.raw_content = customer.raw_content or ""
 

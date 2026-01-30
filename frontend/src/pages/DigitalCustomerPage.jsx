@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Box, Paper, TextField, IconButton, Typography, Avatar, Tabs, Tab,
   Dialog, DialogTitle, DialogContent, DialogActions, Button, Chip, List,
-  ListItem, ListItemButton, ListItemText, ListItemAvatar, Grid
+  ListItem, ListItemButton, ListItemText, ListItemAvatar, Grid, Snackbar, Alert
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import PersonIcon from '@mui/icons-material/Person';
@@ -25,6 +25,9 @@ function DigitalCustomerPage() {
   const [inputMessage, setInputMessage] = useState('');
   const [messages, setMessages] = useState([]);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState(0); // 0: 客户管理, 1: 培训记录
+  const [trainingRecords, setTrainingRecords] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
   const [typingStatus, setTypingStatus] = useState('');
   const [trainingDialog, setTrainingDialog] = useState(false);
@@ -60,6 +63,12 @@ function DigitalCustomerPage() {
     }
   }, [messages, typingStatus]);
 
+  useEffect(() => {
+    if (activeTab === 1) {
+      fetchTrainingRecords();
+    }
+  }, [activeTab]);
+
   const fetchCustomers = async () => {
     try {
       const response = await fetch(`${CONFIG.API_BASE_URL}/digital-customer`);
@@ -69,6 +78,18 @@ function DigitalCustomerPage() {
       }
     } catch (err) {
       console.error('Failed to fetch customers:', err);
+    }
+  };
+
+  const fetchTrainingRecords = async () => {
+    try {
+      const response = await fetch(`${CONFIG.API_BASE_URL}/digital-customer/training/sessions`);
+      if (response.ok) {
+        const data = await response.json();
+        setTrainingRecords(data.records || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch training records:', err);
     }
   };
 
@@ -253,17 +274,24 @@ function DigitalCustomerPage() {
         `${CONFIG.API_BASE_URL}/digital-customer/${deleteTarget.id}`,
         { method: 'DELETE' }
       );
+
       if (response.ok) {
+        // 删除成功，更新本地状态
         setCustomers(prev => prev.filter(c => c.id !== deleteTarget.id));
         if (selectedCustomer?.id === deleteTarget.id) {
           setSelectedCustomer(null);
           setMessages([]);
         }
+        setDeleteTarget(null);  // 只在成功时关闭对话框
+      } else {
+        // 删除失败，显示错误信息
+        const errorData = await response.json().catch(() => ({ detail: '删除失败' }));
+        setError(errorData.detail || '删除客户失败，请重试');
       }
     } catch (err) {
       console.error('Failed to delete customer:', err);
+      setError('网络错误，无法删除客户');
     }
-    setDeleteTarget(null);
   };
 
   const handleUploadSuccess = (newCustomer) => {
@@ -425,7 +453,7 @@ function DigitalCustomerPage() {
           <Box sx={{ display: 'flex', gap: 1 }}>
             {selectedCustomer && (
               <Chip
-                label={`当前客户: ${selectedCustomer.name}`}
+                label={`当前客户: ${selectedCustomer.name || selectedCustomer.profile_type}`}
                 sx={{
                   background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
                   color: '#fff',
@@ -593,6 +621,31 @@ function DigitalCustomerPage() {
           </Box>
         ) : (
           <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
+            {/* Tab 切换 */}
+            <Box sx={{ borderBottom: 1, borderColor: 'rgba(255, 255, 255, 0.1)', mb: 3 }}>
+              <Tabs
+                value={activeTab}
+                onChange={(e, newValue) => setActiveTab(newValue)}
+                sx={{
+                  '& .MuiTab-root': {
+                    color: 'rgba(255, 255, 255, 0.6)',
+                    fontWeight: 600,
+                  },
+                  '& .Mui-selected': {
+                    color: '#43e97b',
+                  },
+                  '& .MuiTabs-indicator': {
+                    backgroundColor: '#43e97b',
+                  },
+                }}
+              >
+                <Tab label="客户管理" />
+                <Tab label="培训记录" />
+              </Tabs>
+            </Box>
+
+            {/* 客户管理 Tab */}
+            {activeTab === 0 && (
             <Grid container spacing={3}>
               <Grid item xs={12} md={6}>
                 <DigitalCustomerUpload onUploadSuccess={handleUploadSuccess} />
@@ -648,8 +701,12 @@ function DigitalCustomerPage() {
                           </Avatar>
                         </ListItemAvatar>
                         <ListItemText
-                          primary={customer.name}
-                          secondary={`${customer.occupation || ''} | ${customer.industry || ''}`}
+                          primary={customer.name || customer.profile_type}
+                          secondary={
+                            customer.name
+                              ? `${customer.profile_type} | ${customer.occupation || ''} | ${customer.industry || ''}`
+                              : `${customer.occupation || ''} | ${customer.industry || ''}`
+                          }
                           primaryTypographyProps={{ sx: { color: '#fff', fontWeight: 600 } }}
                           secondaryTypographyProps={{ sx: { color: 'rgba(255,255,255,0.5)' } }}
                         />
@@ -659,6 +716,80 @@ function DigitalCustomerPage() {
                 </Paper>
               </Grid>
             </Grid>
+            )}
+
+            {/* 培训记录 Tab */}
+            {activeTab === 1 && (
+              <Paper
+                sx={{
+                  p: 3,
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  backdropFilter: 'blur(20px)',
+                  borderRadius: '20px',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                }}
+              >
+                <Typography variant="h6" sx={{ color: '#fff', mb: 3, fontWeight: 700 }}>
+                  培训记录
+                </Typography>
+                {trainingRecords.length === 0 ? (
+                  <Typography sx={{ color: 'rgba(255, 255, 255, 0.5)', textAlign: 'center', py: 4 }}>
+                    暂无培训记录
+                  </Typography>
+                ) : (
+                  <List>
+                    {trainingRecords.map((record) => (
+                      <ListItem
+                        key={record.id}
+                        sx={{
+                          mb: 2,
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          borderRadius: '12px',
+                          border: '1px solid rgba(255, 255, 255, 0.08)',
+                          '&:hover': {
+                            background: 'rgba(255, 255, 255, 0.08)',
+                          },
+                        }}
+                      >
+                        <ListItemAvatar>
+                          <Avatar sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+                            <SchoolIcon />
+                          </Avatar>
+                        </ListItemAvatar>
+                        <ListItemText
+                          primary={
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Typography sx={{ color: '#fff', fontWeight: 600 }}>
+                                {record.trainee_name}
+                              </Typography>
+                              <Typography sx={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+                                vs
+                              </Typography>
+                              <Typography sx={{ color: '#43e97b', fontWeight: 600 }}>
+                                {record.customer_name}
+                              </Typography>
+                            </Box>
+                          }
+                          secondary={
+                            <Box sx={{ mt: 1 }}>
+                              <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+                                客户类型: {record.customer_profile_type} |
+                                阶段: {record.current_stage} |
+                                轮次: {record.total_rounds} |
+                                状态: {record.status === 'active' ? '进行中' : '已完成'}
+                              </Typography>
+                              <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.3)', mt: 0.5, display: 'block' }}>
+                                {new Date(record.created_at).toLocaleString('zh-CN')}
+                              </Typography>
+                            </Box>
+                          }
+                        />
+                      </ListItem>
+                    ))}
+                  </List>
+                )}
+              </Paper>
+            )}
           </Box>
         )}
       </Box>
@@ -747,7 +878,13 @@ function DigitalCustomerPage() {
         </DialogTitle>
         <DialogContent>
           <Typography sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 3, textAlign: 'center' }}>
-            您将与 <strong style={{ color: '#43e97b' }}>{selectedCustomer?.name}</strong> 进行销售培训对话
+            您将与 <strong style={{ color: '#43e97b' }}>
+              {selectedCustomer?.name || selectedCustomer?.profile_type}
+            </strong>
+            {selectedCustomer?.name && selectedCustomer?.profile_type && (
+              <span> ({selectedCustomer.profile_type})</span>
+            )}
+            进行销售培训对话
           </Typography>
           <TextField
             fullWidth
@@ -978,6 +1115,18 @@ function DigitalCustomerPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* 错误提示 Snackbar */}
+      <Snackbar
+        open={!!error}
+        autoHideDuration={6000}
+        onClose={() => setError(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert onClose={() => setError(null)} severity="error" sx={{ width: '100%' }}>
+          {error}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

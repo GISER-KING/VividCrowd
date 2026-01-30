@@ -65,7 +65,8 @@ class CelebrityChatMessage(BaseModel):
 # ========== 数字客户相关模型 ==========
 
 class CustomerProfileBase(BaseModel):
-    name: str
+    name: Optional[str] = None  # 真实客户姓名（可选）
+    profile_type: str  # 客户画像类型（必填）
     age_range: Optional[str] = None
     gender: Optional[str] = None
     occupation: Optional[str] = None

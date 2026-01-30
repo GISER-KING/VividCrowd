@@ -4,7 +4,9 @@
 from typing import Dict, List, Any
 from loguru import logger
 import json
-from backend.models.db_models import TrainingSession, ConversationRound, StageEvaluation
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+from backend.models.db_models import TrainingSession, ConversationRound, StageEvaluation, CustomerChunk
 from backend.core.config import settings
 from dashscope import Generation
 
@@ -72,13 +74,44 @@ class EvaluationEngine:
         self,
         message: str,
         stage: int,
-        session: TrainingSession
+        session: TrainingSession,
+        db_session: Session = None
     ) -> Dict[str, Any]:
         """实时分析销售话术质量"""
 
         stage_criteria = self._get_stage_criteria(stage)
 
+        # 构建客户画像上下文
+        customer_context = ""
+        if session.customer_profile:
+            p = session.customer_profile
+            customer_context = f"""
+【客户背景知识】
+- 客户姓名: {p.name or '未知'}
+- 画像类型: {p.profile_type}
+- 行业/职业: {p.industry or '未知'} / {p.occupation or '未知'}
+- 性格特征: {p.personality_traits or '未知'}
+- 痛点: {p.pain_points or '未知'}
+- 需求: {p.needs or '未知'}
+- 常见异议: {p.objections or '未知'}
+"""
+            # 如果有db_session，尝试从chunks获取更多上下文（作为补充）
+            if db_session:
+                try:
+                    # 简单获取前2个chunk作为补充背景
+                    chunks = db_session.execute(
+                        select(CustomerChunk.chunk_text)
+                        .where(CustomerChunk.customer_profile_id == p.id)
+                        .limit(2)
+                    ).scalars().all()
+                    if chunks:
+                        customer_context += "\n【客户详细背景片段】:\n" + "\n".join([f"- {c[:200]}..." for c in chunks])
+                except Exception as e:
+                    logger.warning(f"Failed to fetch customer chunks: {e}")
+
         prompt = f"""你是一位资深销售培训专家。请分析以下销售话术的质量。
+
+{customer_context}
 
 当前阶段：{stage} - {stage_criteria['name']}
 阶段目标：{stage_criteria['objectives']}
@@ -88,9 +121,10 @@ class EvaluationEngine:
 
 请从以下维度评价：
 1. 是否符合当前阶段目标
-2. 沟通方式是否恰当
+2. 沟通方式是否恰当（考虑到客户的性格和背景）
 3. 是否有明显错误
 4. 推进节奏是否合理
+5. 是否有效针对了客户的痛点或需求（基于客户背景）
 
 返回JSON格式：
 {{

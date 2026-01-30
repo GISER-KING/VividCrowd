@@ -276,12 +276,40 @@ class ChatMessage(Base):
 
 # ==================== 数字客户模型 ====================
 
+class CustomerProfileRegistry(Base):
+    """客户画像文件注册表 - 记录已导入的文件，避免重复导入"""
+    __tablename__ = "customer_profile_registry"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    filename = Column(String(255), unique=True, nullable=False, index=True)  # 文件名
+    file_hash = Column(String(64), nullable=False)  # MD5 哈希值
+    customer_profile_id = Column(Integer, nullable=True)  # 关联的客户画像ID
+    customer_name = Column(String(100), nullable=True)  # 客户姓名（冗余）
+    customer_profile_type = Column(String(100), nullable=True)  # 客户画像类型（冗余）
+    status = Column(String(20), default="success")  # success/failed
+    imported_at = Column(DateTime, default=datetime.utcnow)  # 导入时间
+
+    def to_dict(self):
+        """转换为字典"""
+        return {
+            "id": self.id,
+            "filename": self.filename,
+            "file_hash": self.file_hash,
+            "customer_profile_id": self.customer_profile_id,
+            "customer_name": self.customer_name,
+            "customer_profile_type": self.customer_profile_type,
+            "status": self.status,
+            "imported_at": self.imported_at.isoformat() if self.imported_at else None,
+        }
+
+
 class CustomerProfile(Base):
     """客户画像表 - 存储标准客户的结构化信息"""
     __tablename__ = "customer_profiles"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(100), nullable=False, index=True)
+    name = Column(String(100), nullable=True, index=True)  # 真实客户姓名（可选）
+    profile_type = Column(String(100), nullable=False, index=True)  # 客户画像类型（必填）
 
     # 客户基本信息
     age_range = Column(String(50), nullable=True)  # 年龄段
@@ -310,6 +338,7 @@ class CustomerProfile(Base):
         return {
             "id": self.id,
             "name": self.name,
+            "profile_type": self.profile_type,
             "age_range": self.age_range,
             "gender": self.gender,
             "occupation": self.occupation,
@@ -330,7 +359,11 @@ class CustomerChunk(Base):
     __tablename__ = "customer_chunks"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    customer_profile_id = Column(Integer, ForeignKey("customer_profiles.id", ondelete="CASCADE"), nullable=False, index=True)
+    customer_profile_id = Column(Integer, ForeignKey("customer_profiles.id"), nullable=False, index=True)
+
+    # 冗余字段 - 避免级联删除问题
+    customer_name = Column(String(100), nullable=True)  # 客户姓名
+    customer_profile_type = Column(String(100), nullable=True)  # 客户画像类型
 
     # 分块内容
     chunk_text = Column(Text, nullable=False)
@@ -351,6 +384,8 @@ class CustomerChunk(Base):
         return {
             "id": self.id,
             "customer_profile_id": self.customer_profile_id,
+            "customer_name": self.customer_name,
+            "customer_profile_type": self.customer_profile_type,
             "chunk_text": self.chunk_text,
             "chunk_index": self.chunk_index,
             "chunk_metadata": self.chunk_metadata,
@@ -372,15 +407,26 @@ class TrainingSession(Base):
     trainee_name = Column(String(100), nullable=True)
     customer_profile_id = Column(Integer, ForeignKey("customer_profiles.id"), nullable=False)
 
+    # 冗余字段 - 避免级联删除问题
+    customer_name = Column(String(100), nullable=True)  # 客户姓名
+    customer_profile_type = Column(String(100), nullable=True)  # 客户画像类型
+    customer_occupation = Column(String(100), nullable=True)  # 职业
+    customer_industry = Column(String(100), nullable=True)  # 行业
+
     # 会话状态
     current_stage = Column(Integer, default=1)
     current_round = Column(Integer, default=0)
+    total_rounds = Column(Integer, default=0)
     status = Column(String(20), default="in_progress")  # in_progress/completed/abandoned
 
     # 时间记录
     started_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
     duration_seconds = Column(Integer, nullable=True)
+
+    # 时间戳
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # 关系
     customer_profile = relationship("CustomerProfile")
@@ -392,12 +438,19 @@ class TrainingSession(Base):
             "trainee_id": self.trainee_id,
             "trainee_name": self.trainee_name,
             "customer_profile_id": self.customer_profile_id,
+            "customer_name": self.customer_name,
+            "customer_profile_type": self.customer_profile_type,
+            "customer_occupation": self.customer_occupation,
+            "customer_industry": self.customer_industry,
             "current_stage": self.current_stage,
             "current_round": self.current_round,
+            "total_rounds": self.total_rounds,
             "status": self.status,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "duration_seconds": self.duration_seconds,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
 
 
@@ -406,7 +459,7 @@ class ConversationRound(Base):
     __tablename__ = "conversation_rounds"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(Integer, ForeignKey("training_sessions.id", ondelete="CASCADE"), nullable=False)
+    session_id = Column(Integer, ForeignKey("training_sessions.id"), nullable=False)
 
     round_number = Column(Integer, nullable=False)
     stage = Column(Integer, nullable=False)
@@ -443,7 +496,7 @@ class StageEvaluation(Base):
     __tablename__ = "stage_evaluations"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(Integer, ForeignKey("training_sessions.id", ondelete="CASCADE"), nullable=False)
+    session_id = Column(Integer, ForeignKey("training_sessions.id"), nullable=False)
 
     stage_number = Column(Integer, nullable=False)
     stage_name = Column(String(100), nullable=True)
@@ -491,7 +544,7 @@ class FinalEvaluation(Base):
     __tablename__ = "final_evaluations"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(Integer, ForeignKey("training_sessions.id", ondelete="CASCADE"), unique=True, nullable=False)
+    session_id = Column(Integer, ForeignKey("training_sessions.id"), unique=True, nullable=False)
 
     # 5项核心任务评分
     trust_building_score = Column(Integer, nullable=True)

@@ -56,7 +56,8 @@ class TrainingOrchestrator:
         analysis = await self.evaluation_engine.analyze_message(
             trainee_message,
             current_stage,
-            session
+            session,
+            self.db
         )
 
         yield {

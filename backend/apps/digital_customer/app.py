@@ -14,7 +14,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from backend.core.database import digital_customer_async_session, get_digital_customer_db, digital_customer_sync_engine
 from backend.models.db_models import (
     CustomerProfile, CustomerChunk, ChatSession, ChatMessage, Base,
-    TrainingSession, ConversationRound, StageEvaluation, FinalEvaluation
+    TrainingSession, ConversationRound, StageEvaluation, FinalEvaluation,
+    CustomerProfileRegistry
 )
 from backend.models.schemas import CustomerProfileResponse
 from .services.customer_orchestrator import CustomerOrchestratorService
@@ -68,6 +69,43 @@ async def upload_knowledge(
 
     except Exception as e:
         logger.error(f"Upload knowledge error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@digital_customer_app.get("/knowledge/files")
+async def get_knowledge_files():
+    """获取已上传的销售知识库文件列表"""
+    try:
+        db = next(get_digital_customer_db())
+        try:
+            from backend.models.db_models import SalesKnowledge
+            from sqlalchemy import func
+
+            # 查询所有不同的源文件名及其记录数
+            result = db.execute(
+                select(
+                    SalesKnowledge.source_filename,
+                    func.count(SalesKnowledge.id).label('count'),
+                    func.max(SalesKnowledge.created_at).label('uploaded_at')
+                )
+                .where(SalesKnowledge.source_filename.isnot(None))
+                .group_by(SalesKnowledge.source_filename)
+                .order_by(func.max(SalesKnowledge.created_at).desc())
+            )
+
+            files = []
+            for row in result:
+                files.append({
+                    "filename": row.source_filename,
+                    "count": row.count,
+                    "uploaded_at": row.uploaded_at.isoformat() if row.uploaded_at else None
+                })
+
+            return {"files": files}
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Get knowledge files error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -191,10 +229,33 @@ async def upload_customer_profile(
     if not (file.filename.endswith(".pdf") or file.filename.endswith(".md")):
         raise HTTPException(status_code=400, detail="只支持 PDF 或 Markdown 文件")
 
+    # 读取文件内容并计算哈希
+    file_content = await file.read()
+    import hashlib
+    file_hash = hashlib.md5(file_content).hexdigest()
+
+    # 检查文件是否已导入
+    async with digital_customer_async_session() as session:
+        from backend.models.db_models import CustomerProfileRegistry
+        result = await session.execute(
+            select(CustomerProfileRegistry).where(CustomerProfileRegistry.file_hash == file_hash)
+        )
+        existing_registry = result.scalar_one_or_none()
+
+        if existing_registry and existing_registry.customer_profile_id:
+            logger.info(f"文件已存在: {file.filename}, 返回已有客户画像 ID: {existing_registry.customer_profile_id}")
+            # 返回已有的客户画像
+            result = await session.execute(
+                select(CustomerProfile).where(CustomerProfile.id == existing_registry.customer_profile_id)
+            )
+            existing_customer = result.scalar_one_or_none()
+            if existing_customer:
+                return CustomerProfileResponse.model_validate(existing_customer)
+
     # 保存上传的文件
     file_path = os.path.join(UPLOAD_DIR, file.filename)
     with open(file_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+        f.write(file_content)
 
     try:
         # 根据文件类型提取文本
@@ -203,12 +264,24 @@ async def upload_customer_profile(
         # 使用 LLM 解析结构化信息
         parsed_info = await profile_parser_service.parse_customer_profile(raw_text)
 
+        # 验证必填字段
+        if not parsed_info.get("profile_type"):
+            raise HTTPException(
+                status_code=400,
+                detail="无法从文档中提取客户画像类型，请确保文档包含客户角色描述"
+            )
+
         # 生成 System Prompt
         system_prompt = profile_parser_service.generate_system_prompt(parsed_info)
 
+        # 提取真实姓名和画像类型
+        real_name = parsed_info.get("real_name")  # 可能为 None
+        profile_type = parsed_info.get("profile_type", "未知客户类型")
+
         # 创建数据库记录
         customer = CustomerProfile(
-            name=parsed_info.get("name", "未知客户"),
+            name=real_name,  # 真实客户姓名（可选）
+            profile_type=profile_type,  # 客户画像类型（必填）
             age_range=parsed_info.get("age_range"),
             gender=parsed_info.get("gender"),
             occupation=parsed_info.get("occupation"),
@@ -228,7 +301,8 @@ async def upload_customer_profile(
             await session.flush()  # 获取 customer.id
 
             # 智能分块
-            logger.info(f"开始对 {customer.name} 的文档进行分块...")
+            display_name = customer.name if customer.name else customer.profile_type
+            logger.info(f"开始对 {display_name} 的文档进行分块...")
             chunks = chunking_service.chunk_text(
                 text=raw_text,
                 chunk_size=400,
@@ -247,6 +321,8 @@ async def upload_customer_profile(
                 for idx, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
                     customer_chunk = CustomerChunk(
                         customer_profile_id=customer.id,
+                        customer_name=customer.name,  # 冗余字段
+                        customer_profile_type=customer.profile_type,  # 冗余字段
                         chunk_text=chunk["text"],
                         chunk_index=chunk["chunk_index"],
                         chunk_metadata=chunk["metadata"],
@@ -254,7 +330,20 @@ async def upload_customer_profile(
                     )
                     session.add(customer_chunk)
 
-                logger.info(f"成功为 {customer.name} 创建 {len(chunks)} 个知识块")
+                logger.info(f"成功为 {display_name} 创建 {len(chunks)} 个知识块")
+
+            # 添加注册记录
+            from backend.models.db_models import CustomerProfileRegistry
+            registry = CustomerProfileRegistry(
+                filename=file.filename,
+                file_hash=file_hash,
+                customer_profile_id=customer.id,
+                customer_name=customer.name,
+                customer_profile_type=customer.profile_type,
+                status="success"
+            )
+            session.add(registry)
+            logger.info(f"已注册文件: {file.filename}")
 
             await session.commit()
             await session.refresh(customer)
@@ -354,19 +443,28 @@ async def start_training_session(
         import uuid
         session_id = str(uuid.uuid4())
 
-        # 创建培训会话
-        training_session = TrainingSession(
-            session_id=session_id,
-            trainee_id=trainee_id,
-            trainee_name=trainee_name,
-            customer_profile_id=customer_id,
-            current_stage=1,
-            current_round=0,
-            status="in_progress"
-        )
-
         db = next(get_digital_customer_db())
         try:
+            # 获取客户画像信息
+            customer = db.query(CustomerProfile).filter(CustomerProfile.id == customer_id).first()
+            if not customer:
+                raise HTTPException(status_code=404, detail="客户画像不存在")
+
+            # 创建培训会话（包含冗余字段）
+            training_session = TrainingSession(
+                session_id=session_id,
+                trainee_id=trainee_id,
+                trainee_name=trainee_name,
+                customer_profile_id=customer_id,
+                customer_name=customer.name,  # 冗余字段
+                customer_profile_type=customer.profile_type,  # 冗余字段
+                customer_occupation=customer.occupation,  # 冗余字段
+                customer_industry=customer.industry,  # 冗余字段
+                current_stage=1,
+                current_round=0,
+                status="in_progress"
+            )
+
             db.add(training_session)
             db.commit()
             db.refresh(training_session)
@@ -434,6 +532,52 @@ async def training_websocket_endpoint(websocket: WebSocket, session_id: str):
         await websocket.close()
 
 
+@digital_customer_app.get("/training/sessions")
+async def get_training_sessions(skip: int = 0, limit: int = 50):
+    """获取培训记录列表"""
+    try:
+        db = next(get_digital_customer_db())
+        try:
+            # 查询培训会话，关联客户画像和最终评价
+            result = db.execute(
+                select(TrainingSession, CustomerProfile, FinalEvaluation.id)
+                .join(CustomerProfile, TrainingSession.customer_profile_id == CustomerProfile.id)
+                .outerjoin(FinalEvaluation, TrainingSession.id == FinalEvaluation.session_id)
+                .order_by(TrainingSession.created_at.desc())
+                .offset(skip)
+                .limit(limit)
+            )
+            sessions_data = result.all()
+
+            # 构建返回数据
+            training_records = []
+            for session, profile, final_eval_id in sessions_data:
+                training_records.append({
+                    "id": session.id,
+                    "session_id": session.session_id,
+                    "trainee_name": session.trainee_name or "未知",
+                    "customer_name": profile.name or profile.profile_type,
+                    "customer_profile_type": profile.profile_type,
+                    "status": session.status,
+                    "current_stage": session.current_stage,
+                    "total_rounds": session.total_rounds,
+                    "created_at": session.created_at.isoformat() if session.created_at else None,
+                    "updated_at": session.updated_at.isoformat() if session.updated_at else None,
+                    # 强制设为 True，因为现在支持查看过程详情，无论是否有最终报告
+                    "has_report": True,
+                })
+
+            return {
+                "total": len(training_records),
+                "records": training_records
+            }
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Failed to fetch training sessions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @digital_customer_app.get("/training/sessions/{session_id}/evaluation")
 async def get_training_evaluation(session_id: str):
     """获取培训评价报告"""
@@ -441,10 +585,18 @@ async def get_training_evaluation(session_id: str):
         db = next(get_digital_customer_db())
         try:
             # 查询培训会话
+            # 优先尝试匹配 session_id (UUID)
             result = db.execute(
                 select(TrainingSession).where(TrainingSession.session_id == session_id)
             )
             session = result.scalar_one_or_none()
+
+            # 如果没找到，且 session_id 是数字，尝试匹配 id (PK)
+            if not session and session_id.isdigit():
+                result = db.execute(
+                    select(TrainingSession).where(TrainingSession.id == int(session_id))
+                )
+                session = result.scalar_one_or_none()
 
             if not session:
                 raise HTTPException(status_code=404, detail="培训会话不存在")
@@ -455,14 +607,46 @@ async def get_training_evaluation(session_id: str):
             )
             final_eval = result.scalar_one_or_none()
 
-            if not final_eval:
-                raise HTTPException(status_code=404, detail="评价报告尚未生成")
+            # 即使没有最终评价，也允许查看详情（查看过程数据）
+            # if not final_eval:
+            #     raise HTTPException(status_code=404, detail="评价报告尚未生成")
 
             # 查询阶段评价
             result = db.execute(
                 select(StageEvaluation).where(StageEvaluation.session_id == session.id)
             )
             stage_evals = result.scalars().all()
+
+            # 查询所有对话轮次
+            result = db.execute(
+                select(ConversationRound)
+                .where(ConversationRound.session_id == session.id)
+                .order_by(ConversationRound.round_number)
+            )
+            rounds = result.scalars().all()
+
+            # 按阶段分组对话轮次
+            rounds_by_stage = {}
+            for r in rounds:
+                if r.stage not in rounds_by_stage:
+                    rounds_by_stage[r.stage] = []
+                
+                # 解析分析数据
+                analysis = r.analysis_data or {}
+                if isinstance(analysis, str):
+                    try:
+                        analysis = json.loads(analysis)
+                    except:
+                        analysis = {}
+
+                rounds_by_stage[r.stage].append({
+                    "round_number": r.round_number,
+                    "trainee_message": r.trainee_message,
+                    "customer_response": r.customer_response,
+                    "quality": r.detected_quality,
+                    "issues": analysis.get("issues", []),
+                    "suggestions": analysis.get("suggestions", [])
+                })
 
             # 构建返回数据
             return {
@@ -472,18 +656,18 @@ async def get_training_evaluation(session_id: str):
                 "completed_at": session.completed_at.isoformat() if session.completed_at else None,
                 "duration_minutes": session.duration_seconds // 60 if session.duration_seconds else 0,
                 "scores": {
-                    "trust_building_score": final_eval.trust_building_score,
-                    "needs_diagnosis_score": final_eval.needs_diagnosis_score,
-                    "value_presentation_score": final_eval.value_presentation_score,
-                    "objection_handling_score": final_eval.objection_handling_score,
-                    "progress_management_score": final_eval.progress_management_score,
-                    "total_score": final_eval.total_score,
-                    "performance_level": final_eval.performance_level
+                    "trust_building_score": final_eval.trust_building_score if final_eval else 0,
+                    "needs_diagnosis_score": final_eval.needs_diagnosis_score if final_eval else 0,
+                    "value_presentation_score": final_eval.value_presentation_score if final_eval else 0,
+                    "objection_handling_score": final_eval.objection_handling_score if final_eval else 0,
+                    "progress_management_score": final_eval.progress_management_score if final_eval else 0,
+                    "total_score": final_eval.total_score if final_eval else 0,
+                    "performance_level": final_eval.performance_level if final_eval else "N/A"
                 },
-                "overall_strengths": final_eval.overall_strengths or [],
-                "overall_weaknesses": final_eval.overall_weaknesses or [],
-                "key_improvements": final_eval.key_improvements or [],
-                "uncompleted_tasks": final_eval.uncompleted_tasks or [],
+                "overall_strengths": final_eval.overall_strengths if final_eval else [],
+                "overall_weaknesses": final_eval.overall_weaknesses if final_eval else [],
+                "key_improvements": final_eval.key_improvements if final_eval else [],
+                "uncompleted_tasks": final_eval.uncompleted_tasks if final_eval else [],
                 "stage_details": [
                     {
                         "stage": eval.stage_number,
@@ -492,11 +676,12 @@ async def get_training_evaluation(session_id: str):
                         "rounds_used": eval.rounds_used,
                         "strengths": eval.strengths or [],
                         "weaknesses": eval.weaknesses or [],
-                        "suggestions": eval.suggestions or []
+                        "suggestions": eval.suggestions or [],
+                        "conversation_rounds": rounds_by_stage.get(eval.stage_number, [])
                     }
                     for eval in stage_evals
                 ],
-                "detailed_report": final_eval.detailed_report
+                "detailed_report": final_eval.detailed_report if final_eval else "培训尚未完成或未生成最终报告，以上为已完成阶段的记录。"
             }
 
         finally:
@@ -516,6 +701,7 @@ def init_digital_customer_tables():
     Base.metadata.create_all(
         bind=digital_customer_sync_engine,
         tables=[
+            CustomerProfileRegistry.__table__,
             CustomerProfile.__table__,
             CustomerChunk.__table__,
             ChatSession.__table__,
@@ -574,7 +760,15 @@ async def startup_event():
 
     # 启动定时任务
     await start_scheduler()
-    
+
+    # 自动导入客户画像文件
+    try:
+        from backend.apps.digital_customer.services.auto_import_service import auto_import_service
+        logger.info("开始自动导入客户画像文件...")
+        await auto_import_service.scan_and_import()
+    except Exception as e:
+        logger.error(f"自动导入失败: {e}")
+
     logger.info("Digital customer app startup completed")
 
 

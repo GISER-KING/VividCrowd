@@ -49,7 +49,8 @@ class ProfileParserService:
         parse_prompt = """你是一个客户画像分析专家。请从以下文本中提取客户画像信息，并以 JSON 格式返回。
 
 要求提取的字段：
-- name: 客户画像名称（必填，例如：企业决策者、年轻创业者等）
+- real_name: 客户的真实姓名（如果文档中明确提到，例如：张伟、李明等。如果没有明确姓名，返回 null）
+- profile_type: 客户画像类型（必填，例如：企业决策者、年轻创业者、技术总监等）
 - age_range: 年龄段（例如：25-35岁）
 - gender: 性别
 - occupation: 职业
@@ -59,6 +60,12 @@ class ProfileParserService:
 - pain_points: 痛点（客户面临的问题和挑战，换行分隔）
 - needs: 需求（客户的核心需求，换行分隔）
 - objections: 常见异议（客户可能提出的反对意见，换行分隔）
+
+重要说明：
+1. real_name 是客户的真实姓名，只有在文档中明确提到时才填写（如"客户姓名：张伟"）
+2. profile_type 是客户的类型分类，用于描述客户的角色特征（如"企业决策者"）
+3. 如果文档中没有明确的真实姓名，real_name 字段返回 null
+4. profile_type 必须填写，即使文档中没有明确说明，也要根据描述推断一个合适的类型
 
 只返回 JSON，不要有其他文字。"""
 
@@ -84,7 +91,9 @@ class ProfileParserService:
                     result_text = result_text.split("```")[1].split("```")[0].strip()
 
                 parsed_info = json.loads(result_text)
-                logger.info(f"Successfully parsed customer profile: {parsed_info.get('name', 'Unknown')}")
+                real_name = parsed_info.get('real_name')
+                profile_type = parsed_info.get('profile_type', 'Unknown')
+                logger.info(f"Successfully parsed customer profile - Real name: {real_name or 'None'}, Profile type: {profile_type}")
                 return parsed_info
             else:
                 logger.error(f"LLM API error: {response.message}")
@@ -101,7 +110,10 @@ class ProfileParserService:
     def generate_system_prompt(parsed_info: Dict[str, Any]) -> str:
         """根据解析的客户信息生成 System Prompt"""
 
-        name = parsed_info.get("name", "客户")
+        real_name = parsed_info.get("real_name")
+        profile_type = parsed_info.get("profile_type", "客户")
+        display_name = real_name if real_name else profile_type
+
         age_range = parsed_info.get("age_range", "")
         gender = parsed_info.get("gender", "")
         occupation = parsed_info.get("occupation", "")
@@ -112,9 +124,11 @@ class ProfileParserService:
         needs = parsed_info.get("needs", "")
         objections = parsed_info.get("objections", "")
 
-        system_prompt = f"""你现在要扮演一个名为"{name}"的客户角色，用于销售人员的能力培训。
+        system_prompt = f"""你现在要扮演一个名为"{display_name}"的客户角色，用于销售人员的能力培训。
 
 # 客户基本信息
+- 姓名：{real_name if real_name else '（未提供真实姓名）'}
+- 客户类型：{profile_type}
 - 年龄段：{age_range}
 - 性别：{gender}
 - 职业：{occupation}
@@ -142,6 +156,7 @@ class ProfileParserService:
 4. 当销售人员的方案不够吸引人时，提出相应的异议
 5. 保持真实客户的反应，不要过于配合
 6. 根据销售人员的表现给出真实的反馈
+{f'7. 你的名字是{real_name}，在适当的时候可以提及' if real_name else ''}
 
 请始终保持这个角色，不要跳出角色。"""
 
