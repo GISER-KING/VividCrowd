@@ -1,3 +1,9 @@
+from sqlalchemy.ext.asyncio.session import AsyncSession
+
+
+from sqlalchemy.ext.asyncio.session import AsyncSession
+
+
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
@@ -19,7 +25,7 @@ celebrity_engine = create_async_engine(
     future=True
 )
 
-celebrity_async_session = async_sessionmaker(
+celebrity_async_session = async_sessionmaker[AsyncSession](
     celebrity_engine,
     class_=AsyncSession,
     expire_on_commit=False
@@ -48,7 +54,7 @@ customer_service_engine = create_async_engine(
     future=True
 )
 
-customer_service_async_session = async_sessionmaker(
+customer_service_async_session = async_sessionmaker[AsyncSession](
     customer_service_engine,
     class_=AsyncSession,
     expire_on_commit=False
@@ -66,7 +72,7 @@ digital_customer_engine = create_async_engine(
     future=True
 )
 
-digital_customer_async_session = async_sessionmaker(
+digital_customer_async_session = async_sessionmaker[AsyncSession](
     digital_customer_engine,
     class_=AsyncSession,
     expire_on_commit=False
@@ -79,7 +85,7 @@ digital_customer_sync_engine = create_engine(
     future=True
 )
 
-digital_customer_sync_session = sessionmaker(
+digital_customer_sync_session = sessionmaker[Session](
     bind=digital_customer_sync_engine,
     class_=Session,
     expire_on_commit=False
@@ -168,7 +174,7 @@ async def init_db():
         bind=digital_customer_sync_engine,
         tables=[
             CustomerProfile.__table__,
-            CustomerChunk.__table__,  # ← 必须包含！否则 chunk 表不会创建
+            CustomerChunk.__table__,  
             ChatSession.__table__,
             ChatMessage.__table__,
             SalesKnowledge.__table__,

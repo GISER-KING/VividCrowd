@@ -50,20 +50,6 @@ logs/
 *.log
 backend/tests/reports/*.md
 
-# Database
-*.sqlite3
-*.db
-*.db-journal
-*.db.backup
-*.bak
-
-# Data
-backend/data/
-
-# Uploads
-uploads/
-backend/uploads/
-
 
 # Windows
 nul

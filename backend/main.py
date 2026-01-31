@@ -2,7 +2,7 @@
 VividCrowd 后端总入口
 统一挂载三个子应用：群聊、数字分身、数字客服
 """
-import os
+import uvicorn
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -62,8 +62,8 @@ async def lifespan(app: FastAPI):
 
 # 创建主应用
 app = FastAPI(
-    title="VividCrowd API",
-    description="VividCrowd 智能对话平台 - 群聊、数字分身、数字客服",
+    title="VividCrowd",
+    description="VividCrowd 智能对话平台 - 群聊、数字分身、数字客服、数字客户",
     version="2.0.0",
     lifespan=lifespan
 )
@@ -116,7 +116,6 @@ async def health_check():
 
 
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(
         "backend.main:app",
         host="0.0.0.0",

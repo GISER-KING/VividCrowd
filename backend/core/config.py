@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     # === 基础配置 ===
-    DASHSCOPE_API_KEY: str  # 必填，无默认值（会从环境变量自动读取）
+    DASHSCOPE_API_KEY: str = ""
     MODEL_NAME: str = "qwen-max"
     PROFILES_PATH: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "agents_profiles.json")
 
@@ -65,6 +65,3 @@ class Settings(BaseSettings):
 
 # 创建全局配置实例
 settings = Settings()
-
-# ✅ 验证：可以直接通过 settings.变量名 访问
-# 例如：settings.DASHSCOPE_API_KEY 会自动从环境变量读取
