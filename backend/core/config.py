@@ -1,6 +1,8 @@
 import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import dotenv
+from pathlib import Path
+
 
 # 第一步：在类定义前加载 .env 文件
 dotenv.load_dotenv()
@@ -10,7 +12,7 @@ class Settings(BaseSettings):
     
     # 配置 Pydantic 从 .env 文件和环境变量读取
     model_config = SettingsConfigDict(
-        env_file='.env',           # 从 .env 文件读取
+        env_file=Path(__file__).resolve().parent / '.env',           # 从 .env 文件读取
         env_file_encoding='utf-8',
         case_sensitive=False,      # 环境变量不区分大小写
         extra='ignore'             # 忽略未定义的环境变量
