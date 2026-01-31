@@ -15,13 +15,14 @@ https://github.com/user-attachments/assets/26936c51-f9d9-4590-896c-8e093f7a41ff
 
 ## 📖 Overview
 
-**VividCrowd** is a multi-modal AI conversation platform offering three unique interaction experiences:
+**VividCrowd** is a multi-modal AI conversation platform offering four unique interaction experiences:
 
 | Mode | Description | Features |
 |------|-------------|----------|
 | **Smart Group Chat** | You're the only human in a virtual group chat with multiple AI Agents | Deep persona simulation, hybrid routing, anti-detection |
-| **Digital Twins** | Upload PDFs to create AI digital twins of celebrities/books/courses | Knowledge extraction, private/group chat, idea collision |
+| **Digital Twins** | Upload PDFs to create AI digital twins of celebrities/books/courses | Knowledge extraction, private/group chat, digital human video |
 | **Digital Customer Service** | Knowledge-base powered intelligent customer service system | BM25+Embedding hybrid matching, confidence-based routing, script control |
+| **Sales Training** | Real-time sales training with simulated customers | 5-Stage Process, Real-time Evaluation, AI Assistant, Radar Analysis |
 
 Unlike traditional "Q&A" bots, this project uses sophisticated **orchestration algorithms** and **humanization strategies** to simulate real social intuition and professional service experiences.
 
@@ -155,7 +156,14 @@ PDF Upload
 4. Store to database
 ```
 
-#### 2.2 Dual Conversation Modes
+#### 2.2 Multi-modal Interaction
+
+| Mode | Technology | Description |
+|------|------------|-------------|
+| **Audio** | DashScope Paraformer-Realtime | Real-time ASR & TTS for natural voice conversation |
+| **Video** | Volcano Engine | Single-image audio driver to make static photos "speak" |
+
+#### 2.3 Dual Conversation Modes
 
 | Mode | Features | Response Length |
 |------|----------|-----------------|
@@ -171,22 +179,97 @@ Confucius: If you want to do something well, sharpen your tools first. Yet the g
 Jobs: The intersection of technology and humanities is where true innovation happens...
 ```
 
-#### 2.3 Knowledge-Enhanced Retrieval
+#### 2.4 Knowledge-Enhanced Retrieval
 
 ```python
-# Simple keyword matching retrieval
-1. Split PDF text into paragraphs
-2. Tokenize user question
-3. Score paragraph relevance
-4. Inject top 3 paragraphs into prompt
-5. Cite sources at response end
+# BM25 + Embedding Hybrid Retrieval
+1. Intelligent document chunking (ChunkingService)
+2. Generate and store embedding vectors
+3. BM25 keyword matching + Embedding semantic matching
+4. Hybrid scoring and ranking
+5. Inject top-K paragraphs into prompt
+6. Cite sources at response end
 ```
 
 ---
 
-### 3. Digital Customer Service
+### 3. Sales Training
 
-#### 3.1 System Overview
+#### 3.1 5-Stage Sales Process Control (Stage Controller)
+
+Built-in standard sales process management to guide users step-by-step:
+
+1. **Trust & Relationship Building**: Establish communication foundation
+2. **Needs Diagnosis**: Uncover pain points, budget, and timeline
+3. **Value Presentation**: Link solutions to needs
+4. **Objection Handling**: Identify and resolve concerns
+5. **Closing**: Confirm next steps and deal intent
+
+#### 3.2 Real-time Evaluation Engine
+
+Powered by Qwen-Plus, analyzing every conversation round in real-time:
+
+```python
+# Scoring Criteria (1-5 scale)
+SCORING_CRITERIA = {
+    "trust": "Trust Building",
+    "needs": "Needs Diagnosis",
+    "value": "Value Presentation",
+    "objection": "Objection Handling",
+    "closing": "Process Management"
+}
+
+# Analysis Output
+{
+    "quality": "good",  # fair/good/excellent
+    "issues": ["Failed to confirm budget", "Weak response to objection"],
+    "suggestions": ["Try asking: What is your approximate budget range?"],
+    "score": 4
+}
+```
+
+#### 3.3 AI Sales Assistant (Sales Copilot)
+
+RAG-based intelligent sales knowledge base system:
+
+**Features:**
+- **Knowledge Base Upload**: Support PDF/XLSX sales materials
+- **Intelligent Retrieval**: BM25 + Embedding hybrid search
+- **Real-time Suggestions**: Generate sales script suggestions based on conversation context
+- **Material Recommendations**: Stage-specific SOPs, scripts, Q&A, pricing tables
+
+**Suggestion Generation Flow:**
+```python
+1. Analyze current conversation context
+2. Retrieve relevant sales knowledge
+3. Generate 3 specific suggestions
+4. Include rationale and precautions
+```
+
+#### 3.4 Immersive Customer Simulation
+
+Customer Agent simulates realistic reactions based on detailed profiles:
+- **Personality**: Conservative/Open/Critical
+- **Pain Points**: Specific business challenges
+- **Defense Mechanisms**: Simulates real-world rejection and hesitation
+
+#### 3.5 Comprehensive Evaluation Report
+
+Detailed evaluation report generated after training completion:
+
+**Evaluation Dimensions:**
+- **Total Score**: 25 points (5 points per stage)
+- **Performance Level**: Excellent/Good/Average/Poor
+- **Radar Chart**: 5-dimensional ability visualization
+- **Strengths Analysis**: Core strengths summary
+- **Improvement Suggestions**: Specific enhancement directions
+- **Incomplete Tasks**: Areas needing improvement
+
+---
+
+### 4. Digital Customer Service
+
+#### 4.1 System Overview
 
 Digital Customer Service adopts the philosophy of **"Code controls flow, LLM only rewrites"**, using hard-coded rules to ensure script compliance and service quality.
 
@@ -200,7 +283,7 @@ Digital Customer Service adopts the philosophy of **"Code controls flow, LLM onl
 └─────────────────────────────────────────────────────────┘
 ```
 
-#### 3.2 BM25 + Embedding Hybrid Matching
+#### 4.2 BM25 + Embedding Hybrid Matching
 
 Three-layer hybrid matching architecture:
 
@@ -229,7 +312,7 @@ User Question: "What if my child is picky?"
 └─────────────────────────────────────┘
 ```
 
-#### 3.3 Confidence-Based Routing Strategy
+#### 4.3 Confidence-Based Routing Strategy
 
 | Confidence Range | Type | Strategy | LLM Call |
 |-----------------|------|----------|----------|
@@ -252,7 +335,7 @@ Confidence: 0.75 (mid_confidence)
 Response: [LLM rewrites based on script, more colloquial]
 ```
 
-#### 3.4 Smart Human Handoff
+#### 4.4 Smart Human Handoff
 
 Human handoff uses **hard rules**, not confidence:
 
@@ -266,7 +349,7 @@ Keywords: ['unsatisfied', 'complaint', 'refund', 'terrible']
 # Note: Low confidence doesn't trigger handoff - guides user to rephrase instead
 ```
 
-#### 3.5 CSV Data Import
+#### 4.5 CSV Data Import
 
 **CSV Format Specification:**
 
@@ -299,7 +382,7 @@ CSV Upload
 5. MD5 registration (prevent duplicate imports)
 ```
 
-#### 3.6 Session Management & Analytics
+#### 4.6 Session Management & Analytics
 
 ```python
 # Session data
@@ -335,7 +418,8 @@ CSV Upload
 | Technology | Version | Purpose |
 |------------|---------|---------|
 | FastAPI | 0.115 | Web framework & WebSocket |
-| DashScope | 1.22 | Alibaba Cloud LLM (Qwen-Max/Turbo) + Embedding |
+| DashScope | 1.22 | Alibaba Cloud LLM (Qwen-Max/Turbo) + Embedding + Audio |
+| Volcano Engine | - | Digital Human Video Generation (Image to Video) |
 | SQLAlchemy | 2.0 | Async database ORM |
 | aiosqlite | 0.19 | Async SQLite driver |
 | PyMuPDF | - | PDF text extraction |
@@ -366,6 +450,7 @@ graph TD
     subgraph Frontend["Frontend (React)"]
         GroupChat[Group Chat Page]
         Celebrity[Digital Twin Page]
+        SalesCopilot[Sales Training Page]
         CustomerService[Customer Service Page]
     end
 
@@ -373,22 +458,24 @@ graph TD
         WS1["/ws Group Chat"]
         WS2["/ws/celebrity Twins"]
         WS3["/ws/customer-service CS"]
+        WS4["/ws/training Training"]
 
         subgraph Services["Core Services"]
             Orchestrator[Group Chat Orchestrator]
             CelebrityOrch[Twin Orchestrator]
             CSOrch[CS Orchestrator]
+            TrainingOrch[Training Orchestrator]
 
             Agent[Agent Service]
             CelebrityAgent[Twin Agent]
+            CustomerAgent[Customer Agent]
 
             QAMatcher[QA Matching Engine]
             ResponseGen[Response Generator]
-            SessionMgr[Session Manager]
+            EvaluationEng[Evaluation Engine]
 
             Router[LLM Router]
-            Guardrail[Security Guardrail]
-            PDFParser[PDF Parser]
+            VideoSvc[Video Service]
         end
 
         subgraph Data["Data Layer"]
@@ -441,56 +528,95 @@ graph TD
 ```bash
 VividCrowd/
 ├── backend/                              # Python Backend
-│   ├── app/
-│   │   ├── core/
-│   │   │   └── config.py                # Global configuration
-│   │   ├── db/
-│   │   │   ├── database.py              # Async database connection
-│   │   │   ├── models.py                # Database models
-│   │   │   └── data/
-│   │   │       └── app.db               # SQLite database
-│   │   ├── models/
-│   │   │   └── schemas.py               # Pydantic data models
-│   │   ├── services/
-│   │   │   ├── agent.py                 # Group Chat Agent
-│   │   │   ├── orchestrator.py          # Group Chat Orchestrator
-│   │   │   ├── guardrail.py             # Security Guardrail
-│   │   │   ├── router.py                # LLM Router
-│   │   │   ├── celebrity_agent.py       # Digital Twin Agent
-│   │   │   ├── celebrity_orchestrator.py # Twin Orchestrator
-│   │   │   ├── pdf_parser.py            # PDF Parser
-│   │   │   └── customer_service/        # Customer Service Module
-│   │   │       ├── __init__.py
-│   │   │       ├── orchestrator.py      # CS Orchestrator
-│   │   │       ├── qa_matcher.py        # QA Matching Engine
-│   │   │       ├── response_generator.py # Response Generator
-│   │   │       ├── session_manager.py   # Session Manager
-│   │   │       ├── embedding_service.py # Embedding Service
-│   │   │       ├── excel_importer.py    # CSV Importer
-│   │   │       └── csv_registry.py      # CSV Dedup Registry
-│   │   └── main.py                      # FastAPI entry point
-│   ├── agents_profiles.json             # Group Chat Agent personas
-│   ├── uploads/                         # Upload directory
-│   │   └── csv/                         # CSV files directory
+│   ├── main.py                          # FastAPI main entry
+│   ├── core/
+│   │   ├── config.py                    # Global configuration
+│   │   └── database.py                  # Database connection management
+│   ├── models/
+│   │   ├── db_models.py                 # SQLAlchemy database models
+│   │   └── schemas.py                   # Pydantic data models
+│   ├── apps/                            # Four main application modules
+│   │   ├── chat/                        # Smart Group Chat
+│   │   │   ├── app.py                   # Chat app entry
+│   │   │   └── services/
+│   │   │       ├── orchestrator.py      # Chat orchestrator
+│   │   │       ├── agent.py             # Agent service
+│   │   │       ├── router.py            # LLM router
+│   │   │       └── guardrail.py         # Security guardrail
+│   │   ├── celebrity/                   # Digital Twins
+│   │   │   ├── app.py                   # Celebrity app entry
+│   │   │   └── services/
+│   │   │       ├── celebrity_orchestrator.py
+│   │   │       ├── celebrity_agent.py
+│   │   │       ├── celebrity_retriever.py
+│   │   │       ├── pdf_parser.py
+│   │   │       ├── chunking_service.py
+│   │   │       ├── video_service.py     # Digital human video
+│   │   │       ├── audio_service.py     # TTS/ASR
+│   │   │       └── session_manager.py
+│   │   ├── customer_service/            # Customer Service
+│   │   │   ├── app.py                   # CS app entry
+│   │   │   └── services/
+│   │   │       ├── orchestrator.py
+│   │   │       ├── qa_matcher.py        # QA matching engine
+│   │   │       ├── response_generator.py
+│   │   │       ├── session_manager.py
+│   │   │       ├── embedding_service.py
+│   │   │       ├── excel_importer.py
+│   │   │       └── csv_registry.py
+│   │   └── digital_customer/            # Sales Training
+│   │       ├── app.py                   # Training app entry
+│   │       └── services/
+│   │           ├── customer_orchestrator.py
+│   │           ├── customer_agent.py
+│   │           ├── customer_retriever.py
+│   │           ├── profile_parser.py
+│   │           ├── chunking_service.py
+│   │           ├── audio_service.py
+│   │           └── training/            # Training module
+│   │               ├── training_orchestrator.py
+│   │               ├── evaluation_engine.py
+│   │               ├── stage_controller.py
+│   │               ├── knowledge_service.py
+│   │               └── suggestion_generator.py
+│   ├── data/                            # Database files
+│   │   ├── celebrity.db                 # Digital twins database
+│   │   ├── customerService.db           # Customer service database
+│   │   └── digital_customer.db          # Sales training database
+│   ├── agents_profiles.json             # Group chat agent personas
 │   └── requirements.txt
 │
 ├── frontend/                            # React Frontend
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── Sidebar.jsx              # Sidebar navigation
-│   │   │   └── celebrity/               # Digital Twin components
-│   │   │       ├── CelebrityCard.jsx
-│   │   │       ├── CelebrityUpload.jsx
-│   │   │       ├── CelebritySelector.jsx
-│   │   │       └── ChatModeToggle.jsx
+│   │   │   ├── training/                # Sales training components
+│   │   │   │   ├── StageIndicator.jsx   # Stage indicator
+│   │   │   │   ├── RealTimeFeedback.jsx # Real-time feedback
+│   │   │   │   ├── SalesCopilot.jsx     # AI assistant
+│   │   │   │   ├── SalesMaterialsPanel.jsx
+│   │   │   │   └── RadarChart.jsx       # Radar chart
+│   │   │   ├── celebrity/               # Digital twin components
+│   │   │   │   ├── CelebrityCard.jsx
+│   │   │   │   ├── CelebrityUpload.jsx
+│   │   │   │   ├── CelebritySelector.jsx
+│   │   │   │   └── ChatModeToggle.jsx
+│   │   │   ├── digital_customer/
+│   │   │   │   └── DigitalCustomerUpload.jsx
+│   │   │   └── common/
+│   │   │       ├── AudioInput.jsx       # Voice input
+│   │   │       └── ConnectionStatus.jsx
 │   │   ├── hooks/
 │   │   │   ├── useCelebrityWebSocket.js
-│   │   │   └── useCustomerServiceWS.js
+│   │   │   ├── useCustomerServiceWS.js
+│   │   │   └── useWebSocketWithRetry.js
 │   │   ├── pages/
 │   │   │   ├── GroupChatPage.jsx        # Smart Group Chat
 │   │   │   ├── CelebrityPage.jsx        # Digital Twins
-│   │   │   └── CustomerServicePage.jsx  # Customer Service
-│   │   ├── styles/
+│   │   │   ├── CustomerServicePage.jsx  # Customer Service
+│   │   │   ├── DigitalCustomerPage.jsx  # Sales Training
+│   │   │   └── Training/
+│   │   │       └── EvaluationReportPage.jsx
 │   │   ├── config.js
 │   │   ├── App.jsx
 │   │   └── main.jsx
@@ -554,35 +680,49 @@ Open browser at `http://localhost:5173`
 
 ### REST API
 
-#### General
+#### Smart Group Chat (`/api/chat`)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/health` | Health check |
+| GET | `/api/chat/agents` | Get all group chat agent info |
 
-#### Smart Group Chat
+#### Digital Twins (`/api/celebrity`)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/agents` | Get all group chat agent info |
+| GET | `/api/celebrity` | Get all digital twins |
+| GET | `/api/celebrity/{id}` | Get specific twin details |
+| POST | `/api/celebrity/upload` | Upload PDF to create twin |
+| DELETE | `/api/celebrity/{id}` | Delete digital twin |
+| POST | `/api/celebrity/digital-human/generate-video` | Generate digital human video |
+| POST | `/api/celebrity/digital-human/transcribe-audio` | Speech-to-text |
 
-#### Digital Twins
+#### Customer Service (`/api/customer-service`)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/celebrities` | Get all digital twins |
-| GET | `/celebrities/{id}` | Get specific twin details |
-| POST | `/celebrities/upload` | Upload PDF to create twin |
-| DELETE | `/celebrities/{id}` | Delete digital twin |
+| GET | `/api/customer-service/stats` | Get statistics |
+| GET | `/api/customer-service/qa/count` | Get QA record count |
+| POST | `/api/customer-service/session` | Create new session |
+| GET | `/api/customer-service/session/{id}/history` | Get session history |
+| POST | `/api/customer-service/session/{id}/rating` | Submit user rating |
 
-#### Customer Service
+#### Sales Training (`/api/digital-customer`)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/customer-service/import-csv` | Import CSV knowledge base |
-| GET | `/customer-service/analytics` | Get analytics data |
-| GET | `/customer-service/session/{id}` | Get session history |
-| POST | `/customer-service/session/{id}/rating` | Submit user rating |
+| GET | `/api/digital-customer` | Get all customer profiles |
+| GET | `/api/digital-customer/{id}` | Get customer details |
+| POST | `/api/digital-customer/upload` | Upload customer profile |
+| DELETE | `/api/digital-customer/{id}` | Delete customer profile |
+| POST | `/api/digital-customer/knowledge/upload` | Upload sales knowledge base |
+| GET | `/api/digital-customer/knowledge/files` | Get knowledge file list |
+| POST | `/api/digital-customer/knowledge/query` | Query knowledge base |
+| POST | `/api/digital-customer/training/sessions/start` | Start training session |
+| GET | `/api/digital-customer/training/sessions` | Get training records |
+| GET | `/api/digital-customer/training/sessions/{id}/evaluation` | Get evaluation report |
+| POST | `/api/digital-customer/audio/transcribe` | Speech-to-text |
+| POST | `/api/digital-customer/audio/synthesize` | Text-to-speech |
 
 ### WebSocket Endpoints
 
-#### Smart Group Chat (`/ws`)
+#### Smart Group Chat (`/api/chat/ws`)
 
 **Send:** Plain text message
 
@@ -593,7 +733,7 @@ Open browser at `http://localhost:5173`
 {"type": "stream_end", "sender": "Xiaolin", "content": ""}
 ```
 
-#### Digital Twins (`/ws/celebrity`)
+#### Digital Twins (`/api/celebrity/ws`)
 
 **Send:**
 ```json
@@ -606,7 +746,7 @@ Open browser at `http://localhost:5173`
 
 **Receive:** Same as above
 
-#### Customer Service (`/ws/customer-service`)
+#### Customer Service (`/api/customer-service/ws`)
 
 **Send:**
 ```json
@@ -619,34 +759,85 @@ Open browser at `http://localhost:5173`
 {"type": "response", "content": "...", "confidence": 0.85, "match_type": "mid_confidence"}
 ```
 
+#### Sales Training - Customer Chat (`/api/digital-customer/ws`)
+
+**Send:**
+```json
+{"message": "Hello, I'd like to learn about your product"}
+```
+
+**Receive:** Same as group chat format
+
+#### Sales Training - Training Mode (`/api/digital-customer/training/ws/{session_id}`)
+
+**Send:**
+```json
+{"message": "Hello, have you been facing any business challenges recently?"}
+```
+
+**Receive:**
+```json
+{
+  "type": "evaluation",
+  "quality": "good",
+  "issues": ["Failed to confirm budget"],
+  "suggestions": ["Ask about budget range"],
+  "score": 4
+}
+{
+  "type": "customer_response",
+  "content": "...",
+  "audio_url": "https://..."
+}
+{
+  "type": "stage_completed",
+  "stage": 1,
+  "next_stage": 2
+}
+```
+
 ---
 
 ## ⚙️ Configuration
 
-### Backend Config (`backend/app/core/config.py`)
+### Backend Config (`backend/core/config.py`)
 
 ```python
+# API Keys
+DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")  # Alibaba Cloud DashScope
+
+# LLM Model Configuration
+MODEL_NAME = "qwen-max"                    # Main response model
+ROUTER_MODEL_NAME = "qwen-turbo"           # Router model
+EVALUATION_MODEL = "qwen-plus"             # Evaluation model
+
 # Group Chat Config
-STRICT_PERSONA_CHECK = True      # Strict persona checking
-ENABLE_LLM_ROUTING = True        # LLM semantic routing
-MIN_TYPING_DELAY = 8.0           # Min typing delay (seconds)
-MAX_TYPING_DELAY = 10.0          # Max typing delay (seconds)
-MAX_AGENTS_PER_ROUND = 3         # Max responders per round
+STRICT_PERSONA_CHECK = True                # Strict persona checking
+ENABLE_LLM_ROUTING = True                  # LLM semantic routing
+MIN_TYPING_DELAY = 8.0                     # Min typing delay (seconds)
+MAX_TYPING_DELAY = 10.0                    # Max typing delay (seconds)
+MAX_AGENTS_PER_ROUND = 3                   # Max responders per round
 
 # Night Mode
 NIGHT_MODE_START_HOUR = 23
 NIGHT_MODE_END_HOUR = 7
-NIGHT_MODE_PROBABILITY = 0.2     # Night activity probability
+NIGHT_MODE_PROBABILITY = 0.2               # Night activity probability
 
-# Customer Service Config (qa_matcher.py)
-HIGH_CONFIDENCE_THRESHOLD = 0.9  # High confidence threshold
-MID_CONFIDENCE_THRESHOLD = 0.6   # Medium confidence threshold
-BM25_WEIGHT = 0.6                # BM25 weight
-EMBEDDING_WEIGHT = 0.4           # Embedding weight
+# Customer Service Config
+HIGH_CONFIDENCE_THRESHOLD = 0.9            # High confidence threshold
+MID_CONFIDENCE_THRESHOLD = 0.6             # Medium confidence threshold
+BM25_WEIGHT = 0.6                          # BM25 weight
+EMBEDDING_WEIGHT = 0.4                     # Embedding weight
 
-# LLM Models
-MODEL_NAME = "qwen-max"          # Main response model
-ROUTER_MODEL_NAME = "qwen-turbo" # Router model
+# Digital Human Config (Volcano Engine)
+CELEBRITY_VOLCENGINE_ACCESS_KEY = os.getenv("VOLCENGINE_ACCESS_KEY")
+CELEBRITY_VOLCENGINE_SECRET_KEY = os.getenv("VOLCENGINE_SECRET_KEY")
+
+# OSS Config (Alibaba Cloud Object Storage)
+CELEBRITY_OSS_ACCESS_KEY_ID = os.getenv("OSS_ACCESS_KEY_ID")
+CELEBRITY_OSS_ACCESS_KEY_SECRET = os.getenv("OSS_ACCESS_KEY_SECRET")
+CELEBRITY_OSS_BUCKET_NAME = os.getenv("OSS_BUCKET_NAME")
+CELEBRITY_OSS_ENDPOINT = os.getenv("OSS_ENDPOINT")
 ```
 
 ### Frontend Config (`frontend/src/config.js`)
@@ -654,39 +845,70 @@ ROUTER_MODEL_NAME = "qwen-turbo" # Router model
 ```javascript
 export const CONFIG = {
   API_BASE_URL: 'http://localhost:8000',
-  WS_URL: 'ws://localhost:8000/ws',
-  CELEBRITY_WS_URL: 'ws://localhost:8000/ws/celebrity',
-  CUSTOMER_SERVICE_WS_URL: 'ws://localhost:8000/ws/customer-service'
+  WS_URL: 'ws://localhost:8000/api/chat/ws',
+  CELEBRITY_WS_URL: 'ws://localhost:8000/api/celebrity/ws',
+  CUSTOMER_SERVICE_WS_URL: 'ws://localhost:8000/api/customer-service/ws',
+  DIGITAL_CUSTOMER_WS_URL: 'ws://localhost:8000/api/digital-customer/ws',
+  TRAINING_WS_URL: 'ws://localhost:8000/api/digital-customer/training/ws'
 };
 ```
 
 ---
 
-## 📊 Database Models
+## 📊 Database Architecture
 
-### Main Tables
+### Three Separate Databases
+
+This project adopts a **three-database separation architecture**, with each business module using an independent SQLite database:
+
+#### 1. celebrity.db (Digital Twins Database)
 
 | Table Name | Purpose |
 |------------|---------|
-| `knowledge_sources` | Digital twin knowledge sources |
-| `customer_service_qa` | Customer service QA knowledge base |
-| `customer_service_sessions` | Customer service session records |
-| `customer_service_logs` | Customer service conversation logs |
-| `csv_registry` | CSV file registry |
+| `knowledge_sources` | Celebrity/expert profiles |
+| `celebrity_chunks` | Document chunks with embeddings |
+| `chat_sessions` | Session records |
+| `chat_messages` | Conversation messages |
 
-### Key Fields
+**Key Fields (knowledge_sources):**
+```sql
+id, name, source_type, author, birth_year, death_year,
+nationality, occupation, biography, famous_works, famous_quotes,
+personality_traits, speech_style, system_prompt, raw_content
+```
 
-**customer_service_qa:**
+#### 2. customerService.db (Customer Service Database)
+
+| Table Name | Purpose |
+|------------|---------|
+| `customer_service_qa` | QA knowledge base |
+| `customer_service_sessions` | Session records |
+| `customer_service_logs` | Conversation logs |
+| `csv_registry` | CSV file deduplication registry |
+
+**Key Fields (customer_service_qa):**
 ```sql
 id, question_count, topic_name, typical_question,
 standard_script, risk_notes, keywords, embedding, created_at
 ```
 
-**knowledge_sources:**
+#### 3. digital_customer.db (Sales Training Database)
+
+| Table Name | Purpose |
+|------------|---------|
+| `customer_profiles` | Customer persona profiles |
+| `customer_chunks` | Customer profile chunks |
+| `training_sessions` | Training sessions |
+| `conversation_rounds` | Conversation round records |
+| `stage_evaluations` | Stage evaluations |
+| `final_evaluations` | Comprehensive evaluation reports |
+| `sales_knowledge` | Sales knowledge base |
+| `customer_profile_registry` | Customer profile deduplication registry |
+
+**Key Fields (training_sessions):**
 ```sql
-id, name, source_type, author, birth_year, death_year,
-nationality, occupation, biography, famous_works, famous_quotes,
-personality_traits, speech_style, system_prompt, raw_content
+id, customer_id, user_id, current_stage, stage_completion_rates,
+start_time, end_time, status
 ```
 
 ---
@@ -696,10 +918,12 @@ personality_traits, speech_style, system_prompt, raw_content
 | Scenario | Recommended Mode | Description |
 |----------|-----------------|-------------|
 | Entertainment | Smart Group Chat | Chat casually with virtual friends |
-| Learning | Digital Twins | Converse with historical figures, books, experts |
-| Brainstorming | Twin Group Chat | Multiple experts' idea collision |
+| Learning | Digital Twins (Private) | Deep conversation with historical figures, books, experts |
+| Brainstorming | Digital Twins (Group) | Multiple experts' idea collision |
 | Enterprise CS | Customer Service | Knowledge-base powered Q&A |
 | Product Consulting | Customer Service | Standard scripts + smart guidance |
+| Sales Training | Sales Training | Simulate real customers, practice sales skills |
+| Script Optimization | Sales Training + AI Assistant | Get real-time suggestions, optimize communication strategies |
 
 ---
 

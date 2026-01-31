@@ -15,13 +15,14 @@ https://github.com/user-attachments/assets/26936c51-f9d9-4590-896c-8e093f7a41ff
 
 ## 📖 项目简介
 
-**VividCrowd** 是一个多模态 AI 对话平台，提供三种独特的交互体验：
+**VividCrowd** 是一个多模态 AI 对话平台，提供四种独特的交互体验：
 
 | 模式 | 描述 | 特点 |
 |------|------|------|
 | **智能群聊** | 你是唯一的真人，与多个 AI Agent 组成的虚拟群聊 | 深度拟人化、混合路由、防穿帮 |
-| **数字分身** | 上传 PDF 创建名人/书籍/课程的 AI 数字分身 | 知识提取、私聊/群聊、思想碰撞 |
+| **数字分身** | 上传 PDF 创建名人/书籍/课程的 AI 数字分身 | 知识提取、私聊/群聊、数字人视频 |
 | **数字客服** | 基于知识库的智能客服系统 | BM25+Embedding 混合匹配、置信度分层、话术控制 |
+| **销售演练** | 模拟真实客户进行销售全流程实战演练 | 5阶段流程、实时评价、AI助手、雷达图分析 |
 
 与传统的"一问一答"机器人不同，本项目通过复杂的**编排算法**和**拟人化策略**，模拟了真实的社交直觉和专业服务体验。
 
@@ -153,7 +154,14 @@ PDF上传
 4. 存储至数据库
 ```
 
-#### 2.2 双模式对话
+#### 2.2 多模态交互体验
+
+| 模态 | 技术实现 | 说明 |
+|------|---------|------|
+| **语音 (Audio)** | DashScope Paraformer-Realtime | 实时语音识别与合成，支持自然语音对话 |
+| **视频 (Video)** | 火山引擎 (Volcano Engine) | 单图音频驱动技术，让静态照片"开口说话" |
+
+#### 2.3 双模式对话
 
 | 模式 | 特点 | 回复长度 |
 |------|------|---------|
@@ -169,22 +177,99 @@ PDF上传
 乔布斯: 技术和人文的交汇点，才是真正的创新所在...
 ```
 
-#### 2.3 知识检索增强
+#### 2.4 知识检索增强
 
 ```python
-# 简单关键词匹配检索
-1. PDF原文按段落分割
-2. 用户问题分词
-3. 段落相关性评分
-4. Top 3 段落注入 Prompt
-5. 回复末尾标注来源
+# BM25 + Embedding 混合检索
+1. PDF原文智能分块（ChunkingService）
+2. 生成 Embedding 向量存储
+3. BM25 关键词匹配 + Embedding 语义匹配
+4. 混合评分排序
+5. Top-K 段落注入 Prompt
+6. 回复末尾标注来源
 ```
 
 ---
 
-### 三、数字客服 (Customer Service)
+### 三、销售实战演练 (Sales Training)
 
-#### 3.1 系统概述
+#### 3.1 五阶段销售流程控制 (Stage Controller)
+
+系统内置标准的销售全流程管理，指导用户循序渐进地完成销售任务：
+
+1. **信任与关系建立 (Trust Building)**：判断沟通意愿，建立对话基础
+2. **信息探索与需求诊断 (Needs Diagnosis)**：挖掘客户痛点，明确预算与时间
+3. **价值呈现与方案链接 (Value Presentation)**：建立需求与产品的关联
+4. **异议/顾虑处理 (Objection Handling)**：识别并化解客户疑虑
+5. **收尾与成交 (Closing)**：明确下一步行动，达成合作意向
+
+#### 3.2 实时评价引擎 (Evaluation Engine)
+
+基于 Qwen-Plus 的智能评价系统，对每一轮对话进行实时分析：
+
+```python
+# 评分维度 (1-5分)
+SCORING_CRITERIA = {
+    "trust": "信任与关系建立",
+    "needs": "信息探索与需求诊断",
+    "value": "价值呈现与方案链接",
+    "objection": "异议/顾虑处理管理",
+    "closing": "进程推进与节奏管理"
+}
+
+# 分析输出
+{
+    "quality": "good",  # fair/good/excellent
+    "issues": ["未确认客户预算", "回应异议不够坚定"],
+    "suggestions": ["试着询问：您的预算范围大概是多少？"],
+    "score": 4
+}
+```
+
+#### 3.3 AI 销售助手 (Sales Copilot)
+
+基于 RAG 的智能销售知识库系统：
+
+**功能特性：**
+- **知识库上传**：支持 PDF/XLSX 格式的销售资料
+- **智能检索**：BM25 + Embedding 混合检索
+- **实时建议**：根据对话上下文生成销售话术建议
+- **材料推荐**：按阶段推荐 SOP、话术、Q&A、价格表等
+
+**建议生成流程：**
+```python
+1. 分析当前对话上下文
+2. 检索相关销售知识
+3. 生成 3 条具体建议
+4. 附带使用理由和注意事项
+```
+
+#### 3.4 沉浸式客户模拟
+
+Customer Agent 基于详细画像模拟真实客户反应：
+- **性格特征**：保守/开放/挑剔
+- **痛点需求**：具体的业务痛点
+- **防御机制**：模拟真实客户的拒绝和迟疑
+
+---
+
+#### 3.5 综合评价报告
+
+训练结束后生成详细的评价报告：
+
+**评价维度：**
+- **总分**：25 分制（5 个阶段各 5 分）
+- **表现等级**：优秀/良好/一般/较差
+- **雷达图**：5 维能力可视化
+- **优势分析**：核心优势总结
+- **改进建议**：具体提升方向
+- **未完成任务**：待改进事项
+
+---
+
+### 四、数字客服 (Customer Service)
+
+#### 4.1 系统概述
 
 数字客服采用**"代码控制流程，LLM只负责改写"**的设计理念，通过硬性代码规则确保话术遵循度和服务质量。
 
@@ -197,7 +282,7 @@ PDF上传
 └─────────────────────────────────────────────────────────┘
 ```
 
-#### 3.2 BM25 + Embedding 混合匹配
+#### 4.2 BM25 + Embedding 混合匹配
 
 采用三层混合匹配架构：
 
@@ -225,7 +310,7 @@ PDF上传
 └─────────────────────────────────────┘
 ```
 
-#### 3.3 置信度分层策略
+#### 4.3 置信度分层策略
 
 | 置信度范围 | 类型 | 处理策略 | LLM调用 |
 |-----------|------|---------|--------|
@@ -248,7 +333,7 @@ PDF上传
 回复: [LLM基于标准话术改写，更口语化]
 ```
 
-#### 3.4 智能转人工
+#### 4.4 智能转人工
 
 转人工判断采用**硬性规则**，不依赖置信度：
 
@@ -262,7 +347,7 @@ PDF上传
 # 注意: 低置信度不转人工，而是引导用户重新描述问题
 ```
 
-#### 3.5 CSV 数据导入
+#### 4.5 CSV 数据导入
 
 **CSV 格式规范：**
 
@@ -295,7 +380,7 @@ CSV上传
 5. MD5 注册 (防重复导入)
 ```
 
-#### 3.6 会话管理与统计
+#### 4.6 会话管理与统计
 
 ```python
 # 会话数据
@@ -331,7 +416,8 @@ CSV上传
 | 技术 | 版本 | 用途 |
 |------|------|------|
 | FastAPI | 0.115 | Web 框架 & WebSocket |
-| DashScope | 1.22 | 阿里云 LLM (Qwen-Max/Turbo) + Embedding |
+| DashScope | 1.22 | 阿里云 LLM (Qwen-Max/Turbo) + Embedding + Audio |
+| Volcano Engine | - | 火山引擎数字人视频生成 (Image to Video) |
 | SQLAlchemy | 2.0 | 异步数据库 ORM |
 | aiosqlite | 0.19 | 异步 SQLite 驱动 |
 | PyMuPDF | - | PDF 文本提取 |
@@ -362,6 +448,7 @@ graph TD
     subgraph Frontend["前端 (React)"]
         GroupChat[智能群聊页面]
         Celebrity[数字分身页面]
+        SalesCopilot[销售演练页面]
         CustomerService[数字客服页面]
     end
 
@@ -369,22 +456,24 @@ graph TD
         WS1["/ws 群聊"]
         WS2["/ws/celebrity 分身"]
         WS3["/ws/customer-service 客服"]
+        WS4["/ws/training 演练"]
 
         subgraph Services["核心服务"]
             Orchestrator[群聊编排器]
             CelebrityOrch[分身编排器]
             CSOrch[客服编排器]
+            TrainingOrch[培训编排器]
 
             Agent[Agent服务]
             CelebrityAgent[分身Agent]
+            CustomerAgent[客户Agent]
 
             QAMatcher[QA匹配引擎]
             ResponseGen[回复生成器]
-            SessionMgr[会话管理]
-
+            EvaluationEng[评价引擎]
+            
             Router[LLM路由]
-            Guardrail[安全围栏]
-            PDFParser[PDF解析器]
+            VideoSvc[视频生成服务]
         end
 
         subgraph Data["数据层"]
@@ -437,56 +526,95 @@ graph TD
 ```bash
 VividCrowd/
 ├── backend/                              # Python 后端
-│   ├── app/
-│   │   ├── core/
-│   │   │   └── config.py                # 全局配置
-│   │   ├── db/
-│   │   │   ├── database.py              # 异步数据库连接
-│   │   │   ├── models.py                # 数据库模型
-│   │   │   └── data/
-│   │   │       └── app.db               # SQLite 数据库
-│   │   ├── models/
-│   │   │   └── schemas.py               # Pydantic 数据模型
-│   │   ├── services/
-│   │   │   ├── agent.py                 # 群聊 Agent
-│   │   │   ├── orchestrator.py          # 群聊编排器
-│   │   │   ├── guardrail.py             # 安全围栏
-│   │   │   ├── router.py                # LLM 路由
-│   │   │   ├── celebrity_agent.py       # 数字分身 Agent
-│   │   │   ├── celebrity_orchestrator.py # 分身编排器
-│   │   │   ├── pdf_parser.py            # PDF 解析
-│   │   │   └── customer_service/        # 客服模块
-│   │   │       ├── __init__.py
-│   │   │       ├── orchestrator.py      # 客服编排器
+│   ├── main.py                          # FastAPI 主入口
+│   ├── core/
+│   │   ├── config.py                    # 全局配置
+│   │   └── database.py                  # 数据库连接管理
+│   ├── models/
+│   │   ├── db_models.py                 # SQLAlchemy 数据库模型
+│   │   └── schemas.py                   # Pydantic 数据模型
+│   ├── apps/                            # 四大应用模块
+│   │   ├── chat/                        # 智能群聊
+│   │   │   ├── app.py                   # 群聊应用入口
+│   │   │   └── services/
+│   │   │       ├── orchestrator.py      # 群聊编排器
+│   │   │       ├── agent.py             # Agent 服务
+│   │   │       ├── router.py            # LLM 路由
+│   │   │       └── guardrail.py         # 安全围栏
+│   │   ├── celebrity/                   # 数字分身
+│   │   │   ├── app.py                   # 分身应用入口
+│   │   │   └── services/
+│   │   │       ├── celebrity_orchestrator.py
+│   │   │       ├── celebrity_agent.py
+│   │   │       ├── celebrity_retriever.py
+│   │   │       ├── pdf_parser.py
+│   │   │       ├── chunking_service.py
+│   │   │       ├── video_service.py     # 数字人视频
+│   │   │       ├── audio_service.py     # TTS/ASR
+│   │   │       └── session_manager.py
+│   │   ├── customer_service/            # 数字客服
+│   │   │   ├── app.py                   # 客服应用入口
+│   │   │   └── services/
+│   │   │       ├── orchestrator.py
 │   │   │       ├── qa_matcher.py        # QA 匹配引擎
-│   │   │       ├── response_generator.py # 回复生成器
-│   │   │       ├── session_manager.py   # 会话管理
-│   │   │       ├── embedding_service.py # Embedding 服务
-│   │   │       ├── excel_importer.py    # CSV 导入
-│   │   │       └── csv_registry.py      # CSV 去重注册
-│   │   └── main.py                      # FastAPI 入口
+│   │   │       ├── response_generator.py
+│   │   │       ├── session_manager.py
+│   │   │       ├── embedding_service.py
+│   │   │       ├── excel_importer.py
+│   │   │       └── csv_registry.py
+│   │   └── digital_customer/            # 销售演练
+│   │       ├── app.py                   # 演练应用入口
+│   │       └── services/
+│   │           ├── customer_orchestrator.py
+│   │           ├── customer_agent.py
+│   │           ├── customer_retriever.py
+│   │           ├── profile_parser.py
+│   │           ├── chunking_service.py
+│   │           ├── audio_service.py
+│   │           └── training/            # 培训模块
+│   │               ├── training_orchestrator.py
+│   │               ├── evaluation_engine.py
+│   │               ├── stage_controller.py
+│   │               ├── knowledge_service.py
+│   │               └── suggestion_generator.py
+│   ├── data/                            # 数据库文件
+│   │   ├── celebrity.db                 # 数字分身数据库
+│   │   ├── customerService.db           # 客服数据库
+│   │   └── digital_customer.db          # 销售演练数据库
 │   ├── agents_profiles.json             # 群聊 Agent 人设
-│   ├── uploads/                         # 上传文件目录
-│   │   └── csv/                         # CSV 文件目录
 │   └── requirements.txt
 │
 ├── frontend/                            # React 前端
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── Sidebar.jsx              # 侧边栏导航
-│   │   │   └── celebrity/               # 数字分身组件
-│   │   │       ├── CelebrityCard.jsx
-│   │   │       ├── CelebrityUpload.jsx
-│   │   │       ├── CelebritySelector.jsx
-│   │   │       └── ChatModeToggle.jsx
+│   │   │   ├── training/                # 销售演练组件
+│   │   │   │   ├── StageIndicator.jsx   # 阶段指示器
+│   │   │   │   ├── RealTimeFeedback.jsx # 实时反馈
+│   │   │   │   ├── SalesCopilot.jsx     # AI 助手
+│   │   │   │   ├── SalesMaterialsPanel.jsx
+│   │   │   │   └── RadarChart.jsx       # 雷达图
+│   │   │   ├── celebrity/               # 数字分身组件
+│   │   │   │   ├── CelebrityCard.jsx
+│   │   │   │   ├── CelebrityUpload.jsx
+│   │   │   │   ├── CelebritySelector.jsx
+│   │   │   │   └── ChatModeToggle.jsx
+│   │   │   ├── digital_customer/
+│   │   │   │   └── DigitalCustomerUpload.jsx
+│   │   │   └── common/
+│   │   │       ├── AudioInput.jsx       # 语音输入
+│   │   │       └── ConnectionStatus.jsx
 │   │   ├── hooks/
 │   │   │   ├── useCelebrityWebSocket.js
-│   │   │   └── useCustomerServiceWS.js
+│   │   │   ├── useCustomerServiceWS.js
+│   │   │   └── useWebSocketWithRetry.js
 │   │   ├── pages/
 │   │   │   ├── GroupChatPage.jsx        # 智能群聊
 │   │   │   ├── CelebrityPage.jsx        # 数字分身
-│   │   │   └── CustomerServicePage.jsx  # 数字客服
-│   │   ├── styles/
+│   │   │   ├── CustomerServicePage.jsx  # 数字客服
+│   │   │   ├── DigitalCustomerPage.jsx  # 销售演练
+│   │   │   └── Training/
+│   │   │       └── EvaluationReportPage.jsx
 │   │   ├── config.js
 │   │   ├── App.jsx
 │   │   └── main.jsx
@@ -550,35 +678,49 @@ npm run dev
 
 ### REST API
 
-#### 通用
+#### 智能群聊 (`/api/chat`)
 | 方法 | 端点 | 说明 |
 |------|------|------|
-| GET | `/health` | 健康检查 |
+| GET | `/api/chat/agents` | 获取所有群聊 Agent 信息 |
 
-#### 智能群聊
+#### 数字分身 (`/api/celebrity`)
 | 方法 | 端点 | 说明 |
 |------|------|------|
-| GET | `/agents` | 获取所有群聊 Agent 信息 |
+| GET | `/api/celebrity` | 获取所有数字分身列表 |
+| GET | `/api/celebrity/{id}` | 获取指定数字分身详情 |
+| POST | `/api/celebrity/upload` | 上传 PDF 创建数字分身 |
+| DELETE | `/api/celebrity/{id}` | 删除数字分身 |
+| POST | `/api/celebrity/digital-human/generate-video` | 生成数字人视频 |
+| POST | `/api/celebrity/digital-human/transcribe-audio` | 语音转文字 |
 
-#### 数字分身
+#### 数字客服 (`/api/customer-service`)
 | 方法 | 端点 | 说明 |
 |------|------|------|
-| GET | `/celebrities` | 获取所有数字分身列表 |
-| GET | `/celebrities/{id}` | 获取指定数字分身详情 |
-| POST | `/celebrities/upload` | 上传 PDF 创建数字分身 |
-| DELETE | `/celebrities/{id}` | 删除数字分身 |
+| GET | `/api/customer-service/stats` | 获取统计数据 |
+| GET | `/api/customer-service/qa/count` | 获取 QA 记录数 |
+| POST | `/api/customer-service/session` | 创建新会话 |
+| GET | `/api/customer-service/session/{id}/history` | 获取会话历史 |
+| POST | `/api/customer-service/session/{id}/rating` | 提交用户评分 |
 
-#### 数字客服
+#### 销售演练 (`/api/digital-customer`)
 | 方法 | 端点 | 说明 |
 |------|------|------|
-| POST | `/customer-service/import-csv` | 导入 CSV 知识库 |
-| GET | `/customer-service/analytics` | 获取统计分析数据 |
-| GET | `/customer-service/session/{id}` | 获取会话历史 |
-| POST | `/customer-service/session/{id}/rating` | 提交用户评分 |
+| GET | `/api/digital-customer` | 获取所有客户档案 |
+| GET | `/api/digital-customer/{id}` | 获取客户详情 |
+| POST | `/api/digital-customer/upload` | 上传客户档案 |
+| DELETE | `/api/digital-customer/{id}` | 删除客户档案 |
+| POST | `/api/digital-customer/knowledge/upload` | 上传销售知识库 |
+| GET | `/api/digital-customer/knowledge/files` | 获取知识文件列表 |
+| POST | `/api/digital-customer/knowledge/query` | 查询知识库 |
+| POST | `/api/digital-customer/training/sessions/start` | 开始培训会话 |
+| GET | `/api/digital-customer/training/sessions` | 获取培训记录 |
+| GET | `/api/digital-customer/training/sessions/{id}/evaluation` | 获取评价报告 |
+| POST | `/api/digital-customer/audio/transcribe` | 语音转文字 |
+| POST | `/api/digital-customer/audio/synthesize` | 文字转语音 |
 
 ### WebSocket 端点
 
-#### 智能群聊 (`/ws`)
+#### 智能群聊 (`/api/chat/ws`)
 
 **发送：** 纯文本消息
 
@@ -589,7 +731,7 @@ npm run dev
 {"type": "stream_end", "sender": "小林", "content": ""}
 ```
 
-#### 数字分身 (`/ws/celebrity`)
+#### 数字分身 (`/api/celebrity/ws`)
 
 **发送：**
 ```json
@@ -602,7 +744,7 @@ npm run dev
 
 **接收：** 同上
 
-#### 数字客服 (`/ws/customer-service`)
+#### 数字客服 (`/api/customer-service/ws`)
 
 **发送：**
 ```json
@@ -615,34 +757,85 @@ npm run dev
 {"type": "response", "content": "...", "confidence": 0.85, "match_type": "mid_confidence"}
 ```
 
+#### 销售演练 - 客户对话 (`/api/digital-customer/ws`)
+
+**发送：**
+```json
+{"message": "你好，我想了解一下你们的产品"}
+```
+
+**接收：** 同群聊格式
+
+#### 销售演练 - 培训模式 (`/api/digital-customer/training/ws/{session_id}`)
+
+**发送：**
+```json
+{"message": "您好，请问您最近在业务上有什么困扰吗？"}
+```
+
+**接收：**
+```json
+{
+  "type": "evaluation",
+  "quality": "good",
+  "issues": ["未确认预算"],
+  "suggestions": ["询问预算范围"],
+  "score": 4
+}
+{
+  "type": "customer_response",
+  "content": "...",
+  "audio_url": "https://..."
+}
+{
+  "type": "stage_completed",
+  "stage": 1,
+  "next_stage": 2
+}
+```
+
 ---
 
 ## ⚙️ 配置指南
 
-### 后端配置 (`backend/app/core/config.py`)
+### 后端配置 (`backend/core/config.py`)
 
 ```python
+# API 密钥
+DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")  # 阿里云 DashScope
+
+# LLM 模型配置
+MODEL_NAME = "qwen-max"                    # 主回复模型
+ROUTER_MODEL_NAME = "qwen-turbo"           # 路由模型
+EVALUATION_MODEL = "qwen-plus"             # 评价模型
+
 # 群聊配置
-STRICT_PERSONA_CHECK = True      # 严格人设检查
-ENABLE_LLM_ROUTING = True        # LLM 语义路由
-MIN_TYPING_DELAY = 8.0           # 最小打字延迟 (秒)
-MAX_TYPING_DELAY = 10.0          # 最大打字延迟 (秒)
-MAX_AGENTS_PER_ROUND = 3         # 每轮最多回复人数
+STRICT_PERSONA_CHECK = True                # 严格人设检查
+ENABLE_LLM_ROUTING = True                  # LLM 语义路由
+MIN_TYPING_DELAY = 8.0                     # 最小打字延迟 (秒)
+MAX_TYPING_DELAY = 10.0                    # 最大打字延迟 (秒)
+MAX_AGENTS_PER_ROUND = 3                   # 每轮最多回复人数
 
 # 深夜模式
 NIGHT_MODE_START_HOUR = 23
 NIGHT_MODE_END_HOUR = 7
-NIGHT_MODE_PROBABILITY = 0.2     # 深夜活跃概率
+NIGHT_MODE_PROBABILITY = 0.2               # 深夜活跃概率
 
-# 客服配置 (qa_matcher.py)
-HIGH_CONFIDENCE_THRESHOLD = 0.9  # 高置信度阈值
-MID_CONFIDENCE_THRESHOLD = 0.6   # 中置信度阈值
-BM25_WEIGHT = 0.6                # BM25 权重
-EMBEDDING_WEIGHT = 0.4           # Embedding 权重
+# 客服配置
+HIGH_CONFIDENCE_THRESHOLD = 0.9            # 高置信度阈值
+MID_CONFIDENCE_THRESHOLD = 0.6             # 中置信度阈值
+BM25_WEIGHT = 0.6                          # BM25 权重
+EMBEDDING_WEIGHT = 0.4                     # Embedding 权重
 
-# LLM 模型
-MODEL_NAME = "qwen-max"          # 主回复模型
-ROUTER_MODEL_NAME = "qwen-turbo" # 路由模型
+# 数字人配置（火山引擎）
+CELEBRITY_VOLCENGINE_ACCESS_KEY = os.getenv("VOLCENGINE_ACCESS_KEY")
+CELEBRITY_VOLCENGINE_SECRET_KEY = os.getenv("VOLCENGINE_SECRET_KEY")
+
+# OSS 配置（阿里云对象存储）
+CELEBRITY_OSS_ACCESS_KEY_ID = os.getenv("OSS_ACCESS_KEY_ID")
+CELEBRITY_OSS_ACCESS_KEY_SECRET = os.getenv("OSS_ACCESS_KEY_SECRET")
+CELEBRITY_OSS_BUCKET_NAME = os.getenv("OSS_BUCKET_NAME")
+CELEBRITY_OSS_ENDPOINT = os.getenv("OSS_ENDPOINT")
 ```
 
 ### 前端配置 (`frontend/src/config.js`)
@@ -650,39 +843,70 @@ ROUTER_MODEL_NAME = "qwen-turbo" # 路由模型
 ```javascript
 export const CONFIG = {
   API_BASE_URL: 'http://localhost:8000',
-  WS_URL: 'ws://localhost:8000/ws',
-  CELEBRITY_WS_URL: 'ws://localhost:8000/ws/celebrity',
-  CUSTOMER_SERVICE_WS_URL: 'ws://localhost:8000/ws/customer-service'
+  WS_URL: 'ws://localhost:8000/api/chat/ws',
+  CELEBRITY_WS_URL: 'ws://localhost:8000/api/celebrity/ws',
+  CUSTOMER_SERVICE_WS_URL: 'ws://localhost:8000/api/customer-service/ws',
+  DIGITAL_CUSTOMER_WS_URL: 'ws://localhost:8000/api/digital-customer/ws',
+  TRAINING_WS_URL: 'ws://localhost:8000/api/digital-customer/training/ws'
 };
 ```
 
 ---
 
-## 📊 数据库模型
+## 📊 数据库架构
 
-### 主要数据表
+### 三个独立数据库
+
+本项目采用**三数据库分离架构**，每个业务模块使用独立的 SQLite 数据库：
+
+#### 1. celebrity.db（数字分身数据库）
 
 | 表名 | 用途 |
 |------|------|
-| `knowledge_sources` | 数字分身知识源 |
-| `customer_service_qa` | 客服 QA 知识库 |
-| `customer_service_sessions` | 客服会话记录 |
-| `customer_service_logs` | 客服对话日志 |
-| `csv_registry` | CSV 文件注册表 |
+| `knowledge_sources` | 名人/专家档案 |
+| `celebrity_chunks` | 文档分块与 Embedding |
+| `chat_sessions` | 会话记录 |
+| `chat_messages` | 对话消息 |
 
-### 关键字段
+**关键字段 (knowledge_sources):**
+```sql
+id, name, source_type, author, birth_year, death_year,
+nationality, occupation, biography, famous_works, famous_quotes,
+personality_traits, speech_style, system_prompt, raw_content
+```
 
-**customer_service_qa:**
+#### 2. customerService.db（客服数据库）
+
+| 表名 | 用途 |
+|------|------|
+| `customer_service_qa` | QA 知识库 |
+| `customer_service_sessions` | 会话记录 |
+| `customer_service_logs` | 对话日志 |
+| `csv_registry` | CSV 文件去重注册 |
+
+**关键字段 (customer_service_qa):**
 ```sql
 id, question_count, topic_name, typical_question,
 standard_script, risk_notes, keywords, embedding, created_at
 ```
 
-**knowledge_sources:**
+#### 3. digital_customer.db（销售演练数据库）
+
+| 表名 | 用途 |
+|------|------|
+| `customer_profiles` | 客户画像档案 |
+| `customer_chunks` | 客户档案分块 |
+| `training_sessions` | 培训会话 |
+| `conversation_rounds` | 对话轮次记录 |
+| `stage_evaluations` | 阶段评价 |
+| `final_evaluations` | 综合评价报告 |
+| `sales_knowledge` | 销售知识库 |
+| `customer_profile_registry` | 客户档案去重注册 |
+
+**关键字段 (training_sessions):**
 ```sql
-id, name, source_type, author, birth_year, death_year,
-nationality, occupation, biography, famous_works, famous_quotes,
-personality_traits, speech_style, system_prompt, raw_content
+id, customer_id, user_id, current_stage, stage_completion_rates,
+start_time, end_time, status
 ```
 
 ---
@@ -692,10 +916,12 @@ personality_traits, speech_style, system_prompt, raw_content
 | 场景 | 推荐模式 | 说明 |
 |------|---------|------|
 | 娱乐社交 | 智能群聊 | 与虚拟群友闲聊、讨论 |
-| 学习研究 | 数字分身 | 与历史人物、书籍、专家对话 |
-| 头脑风暴 | 数字分身群聊 | 多位专家思想碰撞 |
+| 学习研究 | 数字分身（私聊） | 与历史人物、书籍、专家深度对话 |
+| 头脑风暴 | 数字分身（群聊） | 多位专家思想碰撞 |
 | 企业客服 | 数字客服 | 基于知识库的智能问答 |
 | 产品咨询 | 数字客服 | 标准话术 + 智能引导 |
+| 销售培训 | 销售演练 | 模拟真实客户，实战演练销售技巧 |
+| 话术优化 | 销售演练 + AI 助手 | 获取实时建议，优化沟通策略 |
 
 ---
 

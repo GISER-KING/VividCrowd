@@ -111,5 +111,6 @@ class SalesKnowledgeService:
             scores.append((score, cand.content))
             
         # 排序并返回前N个
-        scores.sort(key=lambda x: x[1], reverse=True)
+        # x[0] 是 score, x[1] 是 content
+        scores.sort(key=lambda x: x[0], reverse=True)
         return [item[1] for item in scores[:limit]]
