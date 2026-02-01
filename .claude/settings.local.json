@@ -4,7 +4,8 @@
       "Bash(find:*)",
       "Bash(python -m backend.migrations.add_customer_profile_type:*)",
       "Bash(python add_customer_profile_type.py:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(powershell:*)"
     ],
     "deny": [],
     "ask": []

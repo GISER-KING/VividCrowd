@@ -36,7 +36,6 @@ yarn-error.log*
 
 # IDEs
 .vscode/
-.claude/
 .idea/
 *.suo
 *.ntvs*
