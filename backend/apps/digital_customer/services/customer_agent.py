@@ -44,7 +44,8 @@ class CustomerAgent:
             f"你正在与一位销售人员对话。请保持客户角色，根据你的性格特征、痛点和需求来回应。\n\n"
             f"对话历史：\n{context}\n\n"
             f"销售人员说：{user_msg}\n\n"
-            f"请以 {self.name} 的身份回复（保持真实客户的反应，50-150字）："
+            f"请以 {self.name} 的身份回复（保持真实客户的反应，50-150字）。\n"
+            f"**重要**：直接说出你的回复内容，不要在开头加上你自己的称呼或名字。"
         )
 
         # 使用混合检索获取相关知识
@@ -65,7 +66,8 @@ class CustomerAgent:
                         f"你正在与一位销售人员对话。请保持客户角色，根据你的性格特征、痛点和需求来回应。\n\n"
                         f"对话历史：\n{context}\n\n"
                         f"销售人员说：{user_msg}\n\n"
-                        f"请以 {self.name} 的身份回复（保持真实客户的反应，50-150字）："
+                        f"请以 {self.name} 的身份回复（保持真实客户的反应，50-150字）。\n"
+                        f"**重要**：直接说出你的回复内容，不要在开头加上你自己的称呼或名字。"
                     )
             except Exception as e:
                 logger.warning(f"Retrieval failed: {e}, using basic prompt")

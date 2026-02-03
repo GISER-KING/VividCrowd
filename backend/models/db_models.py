@@ -539,6 +539,40 @@ class StageEvaluation(Base):
         }
 
 
+class CopilotMessage(Base):
+    """销售助手对话记录表 - 记录培训过程中与销售助手的交互"""
+    __tablename__ = "copilot_messages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(Integer, ForeignKey("training_sessions.id"), nullable=False)
+
+    # 消息类型: user_query/bot_response/suggestion
+    message_type = Column(String(50), nullable=False)
+
+    # 消息内容
+    content = Column(Text, nullable=False)
+
+    # 关联的轮次（如果是建议类型）
+    round_number = Column(Integer, nullable=True)
+    stage = Column(Integer, nullable=True)
+
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+    # 关系
+    session = relationship("TrainingSession", backref="copilot_messages")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "session_id": self.session_id,
+            "message_type": self.message_type,
+            "content": self.content,
+            "round_number": self.round_number,
+            "stage": self.stage,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+        }
+
+
 class FinalEvaluation(Base):
     """最终评价表 - 整体评价报告"""
     __tablename__ = "final_evaluations"

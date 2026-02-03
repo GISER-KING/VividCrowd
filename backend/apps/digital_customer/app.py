@@ -6,6 +6,7 @@ import json
 import shutil
 import asyncio
 from typing import List
+from urllib.parse import quote
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, HTTPException, Response
 from sqlalchemy import select
 from loguru import logger
@@ -15,7 +16,7 @@ from backend.core.database import digital_customer_async_session, get_digital_cu
 from backend.models.db_models import (
     CustomerProfile, CustomerChunk, ChatSession, ChatMessage, Base,
     TrainingSession, ConversationRound, StageEvaluation, FinalEvaluation,
-    CustomerProfileRegistry
+    CustomerProfileRegistry, CopilotMessage
 )
 from backend.models.schemas import CustomerProfileResponse
 from .services.customer_orchestrator import CustomerOrchestratorService
@@ -27,34 +28,39 @@ from backend.apps.customer_service.services.embedding_service import embedding_s
 from .services.training.training_orchestrator import TrainingOrchestrator
 from .services.training.knowledge_service import SalesKnowledgeService
 from .services.training.suggestion_generator import SuggestionGenerator
+from .services.markdown_report_generator import generate_markdown_report
+from .services.pdf_report_generator import generate_pdf_from_markdown
 from pydantic import BaseModel
 
-# 创建子应用
-digital_customer_app = FastAPI(title="VividCrowd Digital Customer API", version="1.0.0")
+# 创建数字客户子应用
+digital_customer_app = FastAPI(title="VividCrowd Digital Customer", version="1.0.0")
 
 # 创建定时任务调度器
 scheduler = AsyncIOScheduler()
 
-# 文件上传目录
+# 文件上传目录验证 backend/uploads
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-
+# 知识检索请求数据验证
 class KnowledgeQueryRequest(BaseModel):
     query: str
     stage: int = None
+    customer_id: int = None  # 添加客户画像ID
 
 @digital_customer_app.post("/knowledge/upload")
 async def upload_knowledge(
     file: UploadFile = File(...),
 ):
     """上传销售知识库文件 (仅支持 PDF)"""
-    # 检查文件类型
+    # 检查文件类型，非pdf格式的返回HTTPException
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="只支持 PDF 文件")
 
     # 保存上传的文件
+    # 服务器文件路径
     file_path = os.path.join(UPLOAD_DIR, file.filename)
+    # 写入文件
     with open(file_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
@@ -65,9 +71,11 @@ async def upload_knowledge(
             count = await service.import_file(file_path, file.filename)
             return {"message": "导入成功", "count": count, "filename": file.filename}
         finally:
+            # 关闭数据库
             db.close()
 
     except Exception as e:
+        # 上传文件报错，返回HTTPException
         logger.error(f"Upload knowledge error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -113,27 +121,78 @@ async def get_knowledge_files():
 async def query_knowledge(
     request: KnowledgeQueryRequest
 ):
-    """查询销售知识库 (RAG Chat)"""
+    """查询销售知识库 (RAG Chat) - 支持客户画像个性化"""
     try:
         db = next(get_digital_customer_db())
         try:
-            # 复用 SuggestionGenerator 的逻辑，但作为问答
-            generator = SuggestionGenerator(db)
-            
-            # 1. 检索
+            # 1. 获取客户画像信息（如果提供了customer_id）
+            customer_context = ""
+            customer_profile = None
+            if request.customer_id:
+                customer_profile = db.query(CustomerProfile).filter(
+                    CustomerProfile.id == request.customer_id
+                ).first()
+
+                if customer_profile:
+                    p = customer_profile
+                    customer_context = f"""
+【当前客户画像】
+- 客户姓名: {p.name or '未知'}
+- 画像类型: {p.profile_type}
+- 行业/职业: {p.industry or '未知'} / {p.occupation or '未知'}
+- 性格特征: {p.personality_traits or '未知'}
+- 核心痛点: {p.pain_points or '未知'}
+- 关键需求: {p.needs or '未知'}
+- 常见异议: {p.objections or '未知'}
+
+**重要提示**：你的建议必须针对这位客户的具体情况，引用客户的痛点、需求和职位信息。
+"""
+
+            # 2. 检索相关知识
             service = SalesKnowledgeService(db)
             relevant_docs = await service.search_knowledge(
-                query=request.query, 
-                stage=request.stage, 
+                query=request.query,
+                stage=request.stage,
                 limit=3
             )
-            
+
             if not relevant_docs:
                 return {"answer": "抱歉，知识库中没有找到相关信息。"}
 
-            # 2. 生成回答
+            # 3. 生成个性化回答
             knowledge_text = "\n".join([f"- {doc}" for doc in relevant_docs])
-            prompt = f"""
+
+            # 根据是否有客户画像，使用不同的prompt
+            if customer_context:
+                prompt = f"""
+你是一个专业的销售知识库助手。请根据客户画像和参考资料，为销售人员提供针对性的建议。
+
+{customer_context}
+
+【参考资料】：
+{knowledge_text}
+
+【销售人员的问题】：{request.query}
+
+请按以下格式回答：
+1. **简要解释**：用一句话解释策略或知识点（不要长篇大论）。
+2. **参考话术**：提供 1-2 条具体的建议回复话术。
+
+**关键要求**：
+- 必须使用正确的职位称呼（如：总监、主任、女士）
+- 必须引用客户的具体痛点或需求
+- 必须针对客户的行业和职业特点
+- 话术要自然、专业、有针对性
+- 避免通用的、模板化的建议
+
+**严禁胡编乱造**：
+- 如果参考资料中没有具体的案例数据或成果数字，不要编造
+- 如果不确定某个信息，明确告诉销售人员"需要补充相关数据"
+- 客户画像中的数据是客户的问题，不是你的解决方案数据
+- 只能使用参考资料中明确提到的信息
+"""
+            else:
+                prompt = f"""
 你是一个专业的销售知识库助手。
 请根据以下参考资料回答用户的问题。
 
@@ -145,10 +204,16 @@ async def query_knowledge(
 请按以下格式回答：
 1. **简要解释**：用一句话解释策略或知识点（不要长篇大论）。
 2. **参考话术**：提供 1-2 条具体的建议回复话术。
+
+**严禁胡编乱造**：
+- 只能使用参考资料中明确提到的信息
+- 如果参考资料中没有相关信息，明确说"知识库中暂无相关信息，建议补充相关资料"
+- 不要编造案例、数据或成果数字
 """
+
             from dashscope import Generation
             from backend.core.config import settings
-            
+
             response = Generation.call(
                 model=settings.MODEL_NAME,
                 prompt=prompt,
@@ -578,6 +643,48 @@ async def get_training_sessions(skip: int = 0, limit: int = 50):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@digital_customer_app.post("/training/sessions/{session_id}/copilot-message")
+async def save_copilot_message(
+    session_id: str,
+    message_type: str = Form(...),
+    content: str = Form(...),
+    round_number: int = Form(None),
+    stage: int = Form(None)
+):
+    """保存销售助手对话记录"""
+    try:
+        db = next(get_digital_customer_db())
+        try:
+            # 查询培训会话
+            result = db.execute(
+                select(TrainingSession).where(TrainingSession.session_id == session_id)
+            )
+            session = result.scalar_one_or_none()
+
+            if not session:
+                raise HTTPException(status_code=404, detail="培训会话不存在")
+
+            # 创建销售助手消息记录
+            copilot_msg = CopilotMessage(
+                session_id=session.id,
+                message_type=message_type,
+                content=content,
+                round_number=round_number,
+                stage=stage
+            )
+
+            db.add(copilot_msg)
+            db.commit()
+
+            return {"status": "success", "message": "消息已保存"}
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Failed to save copilot message: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @digital_customer_app.get("/training/sessions/{session_id}/evaluation")
 async def get_training_evaluation(session_id: str):
     """获取培训评价报告"""
@@ -624,6 +731,14 @@ async def get_training_evaluation(session_id: str):
                 .order_by(ConversationRound.round_number)
             )
             rounds = result.scalars().all()
+
+            # 查询销售助手对话记录
+            result = db.execute(
+                select(CopilotMessage)
+                .where(CopilotMessage.session_id == session.id)
+                .order_by(CopilotMessage.timestamp)
+            )
+            copilot_messages = result.scalars().all()
 
             # 按阶段分组对话轮次
             rounds_by_stage = {}
@@ -681,6 +796,16 @@ async def get_training_evaluation(session_id: str):
                     }
                     for eval in stage_evals
                 ],
+                "copilot_messages": [
+                    {
+                        "message_type": msg.message_type,
+                        "content": msg.content,
+                        "round_number": msg.round_number,
+                        "stage": msg.stage,
+                        "timestamp": msg.timestamp.isoformat() if msg.timestamp else None
+                    }
+                    for msg in copilot_messages
+                ],
                 "detailed_report": final_eval.detailed_report if final_eval else "培训尚未完成或未生成最终报告，以上为已完成阶段的记录。"
             }
 
@@ -691,6 +816,261 @@ async def get_training_evaluation(session_id: str):
         raise
     except Exception as e:
         logger.error(f"Failed to get evaluation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@digital_customer_app.get("/training/sessions/{session_id}/download-report")
+async def download_training_report(session_id: str):
+    """下载培训评价报告 Markdown"""
+    try:
+        db = next(get_digital_customer_db())
+        try:
+            # 查询培训会话
+            result = db.execute(
+                select(TrainingSession).where(TrainingSession.session_id == session_id)
+            )
+            session = result.scalar_one_or_none()
+
+            # 如果没找到，且 session_id 是数字，尝试匹配 id (PK)
+            if not session and session_id.isdigit():
+                result = db.execute(
+                    select(TrainingSession).where(TrainingSession.id == int(session_id))
+                )
+                session = result.scalar_one_or_none()
+
+            if not session:
+                raise HTTPException(status_code=404, detail="培训会话不存在")
+
+            # 查询最终评价
+            result = db.execute(
+                select(FinalEvaluation).where(FinalEvaluation.session_id == session.id)
+            )
+            final_eval = result.scalar_one_or_none()
+
+            # 查询阶段评价
+            result = db.execute(
+                select(StageEvaluation).where(StageEvaluation.session_id == session.id)
+            )
+            stage_evals = result.scalars().all()
+
+            # 查询所有对话轮次
+            result = db.execute(
+                select(ConversationRound)
+                .where(ConversationRound.session_id == session.id)
+                .order_by(ConversationRound.round_number)
+            )
+            rounds = result.scalars().all()
+
+            # 按阶段分组对话轮次
+            rounds_by_stage = {}
+            for r in rounds:
+                if r.stage not in rounds_by_stage:
+                    rounds_by_stage[r.stage] = []
+
+                analysis = r.analysis_data or {}
+                if isinstance(analysis, str):
+                    try:
+                        analysis = json.loads(analysis)
+                    except:
+                        analysis = {}
+
+                rounds_by_stage[r.stage].append({
+                    "round_number": r.round_number,
+                    "trainee_message": r.trainee_message,
+                    "customer_response": r.customer_response,
+                    "quality": r.detected_quality,
+                    "issues": analysis.get("issues", []),
+                    "suggestions": analysis.get("suggestions", [])
+                })
+
+            # 构建评价数据
+            evaluation_data = {
+                "session_id": session.session_id,
+                "trainee_name": session.trainee_name,
+                "scenario_name": f"{session.customer_profile_type or '销售培训场景'}",
+                "completed_at": session.completed_at.isoformat() if session.completed_at else None,
+                "duration_minutes": session.duration_seconds // 60 if session.duration_seconds else 0,
+                "scores": {
+                    "trust_building_score": final_eval.trust_building_score if final_eval else 0,
+                    "needs_diagnosis_score": final_eval.needs_diagnosis_score if final_eval else 0,
+                    "value_presentation_score": final_eval.value_presentation_score if final_eval else 0,
+                    "objection_handling_score": final_eval.objection_handling_score if final_eval else 0,
+                    "progress_management_score": final_eval.progress_management_score if final_eval else 0,
+                    "total_score": final_eval.total_score if final_eval else 0,
+                    "performance_level": final_eval.performance_level if final_eval else "average"
+                },
+                "overall_strengths": final_eval.overall_strengths if final_eval else [],
+                "overall_weaknesses": final_eval.overall_weaknesses if final_eval else [],
+                "key_improvements": final_eval.key_improvements if final_eval else [],
+                "uncompleted_tasks": final_eval.uncompleted_tasks if final_eval else [],
+                "stage_details": [
+                    {
+                        "stage": eval.stage_number,
+                        "stage_name": eval.stage_name,
+                        "score": eval.score,
+                        "rounds_used": eval.rounds_used,
+                        "strengths": eval.strengths or [],
+                        "weaknesses": eval.weaknesses or [],
+                        "suggestions": eval.suggestions or [],
+                        "conversation_rounds": rounds_by_stage.get(eval.stage_number, [])
+                    }
+                    for eval in stage_evals
+                ]
+            }
+
+            # 生成 Markdown
+            markdown_content = generate_markdown_report(evaluation_data)
+
+            # 生成文件名（中文）
+            filename = f"培训报告_{session.trainee_name}_{session.session_id[:8]}.md"
+            # URL 编码文件名（RFC 5987）
+            encoded_filename = quote(filename)
+
+            # 返回 Markdown 文件
+            return Response(
+                content=markdown_content.encode('utf-8'),
+                media_type="text/markdown; charset=utf-8",
+                headers={
+                    "Content-Disposition": f"attachment; filename=\"report.md\"; filename*=UTF-8''{encoded_filename}"
+                }
+            )
+
+        finally:
+            db.close()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to generate Markdown report: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@digital_customer_app.get("/training/sessions/{session_id}/download-pdf")
+async def download_training_report_pdf(session_id: str):
+    """下载培训评价报告 PDF（基于 Markdown 转换）"""
+    try:
+        db = next(get_digital_customer_db())
+        try:
+            # 查询培训会话
+            result = db.execute(
+                select(TrainingSession).where(TrainingSession.session_id == session_id)
+            )
+            session = result.scalar_one_or_none()
+
+            # 如果没找到，且 session_id 是数字，尝试匹配 id (PK)
+            if not session and session_id.isdigit():
+                result = db.execute(
+                    select(TrainingSession).where(TrainingSession.id == int(session_id))
+                )
+                session = result.scalar_one_or_none()
+
+            if not session:
+                raise HTTPException(status_code=404, detail="培训会话不存在")
+
+            # 查询最终评价
+            result = db.execute(
+                select(FinalEvaluation).where(FinalEvaluation.session_id == session.id)
+            )
+            final_eval = result.scalar_one_or_none()
+
+            # 查询阶段评价
+            result = db.execute(
+                select(StageEvaluation).where(StageEvaluation.session_id == session.id)
+            )
+            stage_evals = result.scalars().all()
+
+            # 查询所有对话轮次
+            result = db.execute(
+                select(ConversationRound)
+                .where(ConversationRound.session_id == session.id)
+                .order_by(ConversationRound.round_number)
+            )
+            rounds = result.scalars().all()
+
+            # 按阶段分组对话轮次
+            rounds_by_stage = {}
+            for r in rounds:
+                if r.stage not in rounds_by_stage:
+                    rounds_by_stage[r.stage] = []
+
+                analysis = r.analysis_data or {}
+                if isinstance(analysis, str):
+                    try:
+                        analysis = json.loads(analysis)
+                    except:
+                        analysis = {}
+
+                rounds_by_stage[r.stage].append({
+                    "round_number": r.round_number,
+                    "trainee_message": r.trainee_message,
+                    "customer_response": r.customer_response,
+                    "quality": r.detected_quality,
+                    "issues": analysis.get("issues", []),
+                    "suggestions": analysis.get("suggestions", [])
+                })
+
+            # 构建评价数据
+            evaluation_data = {
+                "session_id": session.session_id,
+                "trainee_name": session.trainee_name,
+                "scenario_name": f"{session.customer_profile_type or '销售培训场景'}",
+                "completed_at": session.completed_at.isoformat() if session.completed_at else None,
+                "duration_minutes": session.duration_seconds // 60 if session.duration_seconds else 0,
+                "scores": {
+                    "trust_building_score": final_eval.trust_building_score if final_eval else 0,
+                    "needs_diagnosis_score": final_eval.needs_diagnosis_score if final_eval else 0,
+                    "value_presentation_score": final_eval.value_presentation_score if final_eval else 0,
+                    "objection_handling_score": final_eval.objection_handling_score if final_eval else 0,
+                    "progress_management_score": final_eval.progress_management_score if final_eval else 0,
+                    "total_score": final_eval.total_score if final_eval else 0,
+                    "performance_level": final_eval.performance_level if final_eval else "average"
+                },
+                "overall_strengths": final_eval.overall_strengths if final_eval else [],
+                "overall_weaknesses": final_eval.overall_weaknesses if final_eval else [],
+                "key_improvements": final_eval.key_improvements if final_eval else [],
+                "uncompleted_tasks": final_eval.uncompleted_tasks if final_eval else [],
+                "stage_details": [
+                    {
+                        "stage": eval.stage_number,
+                        "stage_name": eval.stage_name,
+                        "score": eval.score,
+                        "rounds_used": eval.rounds_used,
+                        "strengths": eval.strengths or [],
+                        "weaknesses": eval.weaknesses or [],
+                        "suggestions": eval.suggestions or [],
+                        "conversation_rounds": rounds_by_stage.get(eval.stage_number, [])
+                    }
+                    for eval in stage_evals
+                ]
+            }
+
+            # 生成 Markdown
+            markdown_content = generate_markdown_report(evaluation_data)
+
+            # 转换为 PDF
+            pdf_buffer = generate_pdf_from_markdown(markdown_content)
+
+            # 生成文件名（中文）
+            filename = f"培训报告_{session.trainee_name}_{session.session_id[:8]}.pdf"
+            # URL 编码文件名（RFC 5987）
+            encoded_filename = quote(filename)
+
+            # 返回 PDF 文件
+            return Response(
+                content=pdf_buffer.getvalue(),
+                media_type="application/pdf",
+                headers={
+                    "Content-Disposition": f"attachment; filename=\"report.pdf\"; filename*=UTF-8''{encoded_filename}"
+                }
+            )
+
+        finally:
+            db.close()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to generate PDF report: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -709,7 +1089,8 @@ def init_digital_customer_tables():
             TrainingSession.__table__,
             ConversationRound.__table__,
             StageEvaluation.__table__,
-            FinalEvaluation.__table__
+            FinalEvaluation.__table__,
+            CopilotMessage.__table__
         ]
     )
     logger.info("Digital customer database tables initialized successfully")

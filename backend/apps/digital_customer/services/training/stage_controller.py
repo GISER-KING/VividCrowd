@@ -193,10 +193,10 @@ class StageController:
             }
 
     async def _call_qwen_plus(self, prompt: str) -> Dict:
-        """调用Qwen-plus API"""
+        """调用Qwen-max API（统一使用qwen-max模型）"""
         try:
             response = Generation.call(
-                model='qwen-plus',
+                model='qwen-max',
                 prompt=prompt,
                 api_key=settings.DASHSCOPE_API_KEY,
                 result_format='message'

@@ -9,7 +9,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import { CONFIG } from '../../config';
 
-function SalesCopilot({ currentStage, suggestions = [], onUseSuggestion }) {
+function SalesCopilot({ currentStage, suggestions = [], onUseSuggestion, customerId, sessionId }) {
   const [messages, setMessages] = useState([
     { id: 1, type: 'bot', content: '你好！我是你的销售助手。你可以问我关于产品、话术或流程的问题，也可以上传资料让我学习。' }
   ]);
@@ -22,16 +22,34 @@ function SalesCopilot({ currentStage, suggestions = [], onUseSuggestion }) {
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
 
-  // 监听 suggestions 变化，如果有新建议，自动添加一条 bot 消息
+  // 保存销售助手消息到后端
+  const saveCopilotMessage = async (messageType, content, roundNumber = null, stage = null) => {
+    if (!sessionId) return;
+
+    try {
+      const formData = new FormData();
+      formData.append('message_type', messageType);
+      formData.append('content', content);
+      if (roundNumber !== null) formData.append('round_number', roundNumber);
+      if (stage !== null) formData.append('stage', stage);
+
+      await fetch(`${CONFIG.API_BASE_URL}/digital-customer/training/sessions/${sessionId}/copilot-message`, {
+        method: 'POST',
+        body: formData,
+      });
+    } catch (error) {
+      console.error('Failed to save copilot message:', error);
+    }
+  };
+
+  // 监听 suggestions 变化，保存到后端但不显示在聊天窗口（避免与右侧面板重复）
   useEffect(() => {
     if (suggestions && suggestions.length > 0) {
-      const suggestionMsg = {
-        id: Date.now(),
-        type: 'suggestion',
-        content: '根据当前对话，我为你生成了一些建议话术：',
-        items: suggestions
-      };
-      setMessages(prev => [...prev, suggestionMsg]);
+      // 只保存建议到后端，不在聊天窗口显示
+      const suggestionsText = suggestions.map((s, idx) =>
+        `${idx + 1}. ${s.rationale ? `💡 ${s.rationale}\n` : ''}${s.script || s}`
+      ).join('\n\n');
+      saveCopilotMessage('suggestion', suggestionsText, null, currentStage);
     }
   }, [suggestions]);
 
@@ -91,9 +109,13 @@ function SalesCopilot({ currentStage, suggestions = [], onUseSuggestion }) {
 
     const userQuery = inputValue.trim();
     setInputValue('');
-    
+
     // Add user message
     setMessages(prev => [...prev, { id: Date.now(), type: 'user', content: userQuery }]);
+
+    // 保存用户查询到后端
+    await saveCopilotMessage('user_query', userQuery, null, currentStage);
+
     setIsQuerying(true);
 
     try {
@@ -104,13 +126,17 @@ function SalesCopilot({ currentStage, suggestions = [], onUseSuggestion }) {
         },
         body: JSON.stringify({
             query: userQuery,
-            stage: currentStage
+            stage: currentStage,
+            customer_id: customerId  // 传递客户画像ID
         })
       });
 
       if (response.ok) {
         const data = await response.json();
         setMessages(prev => [...prev, { id: Date.now() + 1, type: 'bot', content: data.answer }]);
+
+        // 保存助手回复到后端
+        await saveCopilotMessage('bot_response', data.answer, null, currentStage);
       } else {
         setMessages(prev => [...prev, { id: Date.now() + 1, type: 'error', content: '抱歉，我现在无法回答这个问题。' }]);
       }

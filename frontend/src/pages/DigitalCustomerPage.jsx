@@ -47,6 +47,7 @@ function DigitalCustomerPage() {
   const chatContainerRef = useRef(null);
   const wsRef = useRef(null);
   const currentResponseRef = useRef('');
+  const audioRef = useRef(null);
 
   useEffect(() => {
     fetchCustomers();
@@ -54,6 +55,7 @@ function DigitalCustomerPage() {
       if (wsRef.current) {
         wsRef.current.close();
       }
+      stopAudio();
     };
   }, []);
 
@@ -176,6 +178,7 @@ function DigitalCustomerPage() {
 
       case 'training_complete':
         // 培训完成
+        setStageEvaluation(null);  // 关闭阶段评价对话框，避免窗口重叠
         setTrainingComplete(true);
         setFinalEvaluation(data.evaluation);
         break;
@@ -381,8 +384,20 @@ function DigitalCustomerPage() {
     setIsConnected(false);
   };
 
+  const stopAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
+    }
+  };
+
   const playAudio = async (text) => {
     if (!text) return;
+
+    // 停止当前正在播放的音频
+    stopAudio();
+
     try {
         const formData = new FormData();
         formData.append('text', text);
@@ -396,10 +411,24 @@ function DigitalCustomerPage() {
         if (response.ok) {
             const blob = await response.blob();
             const audio = new Audio(URL.createObjectURL(blob));
+            audioRef.current = audio;  // 保存引用
+
+            // 播放结束后清理引用
+            audio.onended = () => {
+              audioRef.current = null;
+            };
+
+            // 错误处理
+            audio.onerror = () => {
+              console.error("Audio playback error");
+              audioRef.current = null;
+            };
+
             await audio.play();
         }
     } catch (err) {
         console.error("TTS failed", err);
+        audioRef.current = null;
     }
   };
 
@@ -521,10 +550,12 @@ function DigitalCustomerPage() {
                 display: { xs: 'none', md: 'block' } // Hide on small screens
               }}
             >
-              <SalesCopilot 
-                currentStage={currentStage} 
+              <SalesCopilot
+                currentStage={currentStage}
                 suggestions={realtimeAnalysis?.suggestions || []}
                 onUseSuggestion={(text) => setInputMessage(text)}
+                customerId={selectedCustomer?.id}
+                sessionId={trainingSessionId}
               />
             </Box>
 
@@ -741,13 +772,18 @@ function DigitalCustomerPage() {
                     {trainingRecords.map((record) => (
                       <ListItem
                         key={record.id}
+                        onClick={() => navigate(`/training/evaluation?session_id=${record.session_id}`)}
                         sx={{
                           mb: 2,
                           background: 'rgba(255, 255, 255, 0.05)',
                           borderRadius: '12px',
                           border: '1px solid rgba(255, 255, 255, 0.08)',
+                          cursor: 'pointer',
+                          transition: 'all 0.3s ease',
                           '&:hover': {
                             background: 'rgba(255, 255, 255, 0.08)',
+                            transform: 'translateY(-2px)',
+                            boxShadow: '0 4px 12px rgba(67, 233, 123, 0.2)',
                           },
                         }}
                       >
@@ -1079,6 +1115,7 @@ function DigitalCustomerPage() {
           <Button
             onClick={() => {
               setTrainingComplete(false);
+              stopAudio();  // 导航前停止音频
               if (finalEvaluation?.session_id) {
                 navigate(`/training/evaluation?session_id=${finalEvaluation.session_id}`);
               }

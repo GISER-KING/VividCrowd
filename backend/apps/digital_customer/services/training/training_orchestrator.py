@@ -72,14 +72,21 @@ class TrainingOrchestrator:
         # 4. 获取客户画像
         customer = session.customer_profile
 
-        # 5. 构建增强的训练上下文
+        # 5. 构建对话历史（从数据库获取之前的对话轮次）
+        chat_history = []
+        previous_rounds = [r for r in session.rounds if r.round_number < current_round]
+        for r in previous_rounds[-5:]:  # 只保留最近5轮对话
+            chat_history.append(f"销售: {r.trainee_message}")
+            chat_history.append(f"客户: {r.customer_response}")
+
+        # 6. 构建增强的训练上下文
         enhanced_context = self._build_training_context(
             session,
             current_stage,
             analysis
         )
 
-        # 6. 生成客户响应（使用CustomerAgent）
+        # 7. 生成客户响应（使用CustomerAgent，传递真实对话历史）
         from backend.core.database import digital_customer_async_session
         async with digital_customer_async_session() as async_session:
             agent = CustomerAgent(customer, db_session=async_session)
@@ -87,9 +94,11 @@ class TrainingOrchestrator:
             yield {"type": "stream_start", "sender": customer.name, "content": ""}
 
             full_response = ""
+            # 将enhanced_context和chat_history合并
+            full_chat_history = chat_history + [enhanced_context]
             async for chunk in agent.generate_response_stream(
                 trainee_message,
-                [enhanced_context],
+                full_chat_history,
                 mode="private"
             ):
                 full_response += chunk
@@ -135,7 +144,7 @@ class TrainingOrchestrator:
                 weaknesses=stage_eval_data.get("weaknesses", []),
                 suggestions=stage_eval_data.get("suggestions", []),
                 score=stage_eval_data.get("score", 3),
-                completed_at=datetime.utcnow(),
+                completed_at=datetime.now(),
                 rounds_used=current_round
             )
             self.db.add(stage_eval)
@@ -177,7 +186,7 @@ class TrainingOrchestrator:
             2: "销售正在探索你的需求。根据他们的提问质量，决定透露多少信息。如果问题精准，提供详细信息；如果问题模糊，给出简短回答。",
             3: "销售正在介绍方案。如果他们能清晰地将方案与你的需求关联，表现出兴趣；如果只是泛泛介绍，表现出疑虑。",
             4: "你应该提出一些合理的异议或顾虑，测试销售的应对能力。根据他们的回应质量，决定是否被说服。",
-            5: "根据前面的沟通质量，决定是否推进成交。如果销售表现优秀，表达明确意向；如果表现一般，保持观望。"
+            5: "根据前面的沟通质量，决定是否推进成交。如果销售表现优秀，表达明确意向；如果表现一般，保持观望；如果表现差，暂停成交。"
         }
 
         context = f"""【培训模式 - 请严格遵守以下指导】
@@ -251,7 +260,7 @@ class TrainingOrchestrator:
 
         # 更新会话状态
         session.status = "completed"
-        session.completed_at = datetime.utcnow()
+        session.completed_at = datetime.now()
         session.duration_seconds = int((session.completed_at - session.started_at).total_seconds())
 
         self.db.commit()

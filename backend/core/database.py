@@ -85,7 +85,7 @@ digital_customer_sync_engine = create_engine(
     future=True
 )
 
-digital_customer_sync_session = sessionmaker[Session](
+digital_customer_sync_session = sessionmaker(
     bind=digital_customer_sync_engine,
     class_=Session,
     expire_on_commit=False

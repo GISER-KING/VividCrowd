@@ -16,6 +16,8 @@ import {
   Accordion,
   AccordionSummary,
   AccordionDetails,
+  Menu,
+  MenuItem,
 } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -25,8 +27,71 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import DownloadIcon from '@mui/icons-material/Download';
+import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import RadarChart from '../../components/training/RadarChart';
 import { CONFIG } from '../../config';
+
+// 打印样式
+const printStyles = `
+  @media print {
+    /* 隐藏不需要打印的元素 */
+    .no-print {
+      display: none !important;
+    }
+
+    /* 页面设置 */
+    @page {
+      size: A4;
+      margin: 1.5cm;
+    }
+
+    /* 重置背景色以节省墨水 */
+    body {
+      background: white !important;
+    }
+
+    /* 确保内容适应页面 */
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    /* 避免在小元素内部分页 */
+    .avoid-break {
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+
+    /* 允许大容器分页 */
+    .allow-break {
+      page-break-inside: auto;
+      break-inside: auto;
+    }
+
+    /* 手风琴默认展开 */
+    .MuiAccordion-root {
+      box-shadow: none !important;
+      page-break-inside: auto !important;
+      break-inside: auto !important;
+    }
+
+    .MuiAccordionDetails-root {
+      display: block !important;
+    }
+
+    /* 优化边距 */
+    .print-optimize {
+      padding: 8px !important;
+      margin-bottom: 12px !important;
+    }
+
+    /* 确保内容可见 */
+    .MuiGrid-root {
+      page-break-inside: auto;
+    }
+  }
+`;
+
 
 const TASK_NAMES = {
   trust_building_score: '信任与关系建立',
@@ -46,10 +111,30 @@ const PERFORMANCE_LEVELS = {
 function EvaluationReportPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { sessionId, evaluation: initialEvaluation } = location.state || {};
+  const { evaluation: initialEvaluation } = location.state || {};
+
+  // 混合提取 sessionId：优先使用 location.state，其次使用查询参数
+  const getSessionId = () => {
+    // 优先：location.state（程序化导航）
+    if (location.state?.sessionId) {
+      return location.state.sessionId;
+    }
+
+    // 备选：查询参数（支持直接 URL 访问和刷新）
+    const searchParams = new URLSearchParams(location.search);
+    const querySessionId = searchParams.get('session_id');
+    if (querySessionId) {
+      return querySessionId;
+    }
+
+    return null;
+  };
+
+  const sessionId = getSessionId();
 
   const [evaluation, setEvaluation] = useState(initialEvaluation);
   const [loading, setLoading] = useState(!initialEvaluation);
+  const [downloadMenuAnchor, setDownloadMenuAnchor] = useState(null);
 
   useEffect(() => {
     if (!sessionId) {
@@ -78,9 +163,61 @@ function EvaluationReportPage() {
     }
   };
 
-  const handleDownloadReport = () => {
-    // TODO: Implement PDF download
-    console.log('Download report');
+  const handleDownloadReport = async () => {
+    await downloadReport('markdown');
+  };
+
+  const handleDownloadPDF = async () => {
+    await downloadReport('pdf');
+  };
+
+  const downloadReport = async (format) => {
+    try {
+      const endpoint = format === 'pdf'
+        ? `${CONFIG.API_BASE_URL}/digital-customer/training/sessions/${sessionId}/download-pdf`
+        : `${CONFIG.API_BASE_URL}/digital-customer/training/sessions/${sessionId}/download-report`;
+
+      const response = await fetch(endpoint);
+
+      if (!response.ok) {
+        throw new Error('下载失败');
+      }
+
+      // 获取文件名（从响应头中提取）
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `培训报告_${sessionId}.${format === 'pdf' ? 'pdf' : 'md'}`;
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename\*=UTF-8''(.+)|filename="(.+)"/);
+        if (filenameMatch) {
+          filename = decodeURIComponent(filenameMatch[1] || filenameMatch[2]);
+        }
+      }
+
+      // 创建 Blob 并触发下载
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      // 关闭菜单
+      setDownloadMenuAnchor(null);
+    } catch (error) {
+      console.error('下载报告失败:', error);
+      alert('下载报告失败，请稍后重试');
+    }
+  };
+
+  const handleOpenDownloadMenu = (event) => {
+    setDownloadMenuAnchor(event.currentTarget);
+  };
+
+  const handleCloseDownloadMenu = () => {
+    setDownloadMenuAnchor(null);
   };
 
   if (loading) {
@@ -115,7 +252,7 @@ function EvaluationReportPage() {
     );
   }
 
-  const performanceLevel = PERFORMANCE_LEVELS[evaluation.performance_level] || PERFORMANCE_LEVELS.average;
+  const performanceLevel = PERFORMANCE_LEVELS[evaluation.scores?.performance_level] || PERFORMANCE_LEVELS.average;
 
   return (
     <Box
@@ -125,8 +262,12 @@ function EvaluationReportPage() {
         background: 'linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #16213e 100%)',
       }}
     >
+      {/* 注入打印样式 */}
+      <style>{printStyles}</style>
+
       {/* Header */}
       <Paper
+        className="no-print"
         elevation={0}
         sx={{
           p: 3,
@@ -156,21 +297,62 @@ function EvaluationReportPage() {
               </Typography>
             </Box>
           </Box>
-          <Button
-            startIcon={<DownloadIcon />}
-            onClick={handleDownloadReport}
-            variant="outlined"
-            sx={{
-              borderColor: 'rgba(255, 255, 255, 0.2)',
-              color: '#fff',
-              '&:hover': {
-                borderColor: '#667eea',
-                background: 'rgba(102, 126, 234, 0.1)',
-              },
-            }}
-          >
-            下载报告
-          </Button>
+          <Box>
+            <Button
+              startIcon={<DownloadIcon />}
+              endIcon={<ArrowDropDownIcon />}
+              onClick={handleOpenDownloadMenu}
+              variant="outlined"
+              sx={{
+                borderColor: 'rgba(255, 255, 255, 0.2)',
+                color: '#fff',
+                '&:hover': {
+                  borderColor: '#667eea',
+                  background: 'rgba(102, 126, 234, 0.1)',
+                },
+              }}
+            >
+              下载报告
+            </Button>
+            <Menu
+              anchorEl={downloadMenuAnchor}
+              open={Boolean(downloadMenuAnchor)}
+              onClose={handleCloseDownloadMenu}
+              PaperProps={{
+                sx: {
+                  background: 'rgba(30, 30, 50, 0.95)',
+                  backdropFilter: 'blur(20px)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  mt: 1,
+                },
+              }}
+            >
+              <MenuItem
+                onClick={handleDownloadReport}
+                sx={{
+                  color: '#fff',
+                  '&:hover': {
+                    background: 'rgba(102, 126, 234, 0.2)',
+                  },
+                }}
+              >
+                <DownloadIcon sx={{ mr: 1, fontSize: 20 }} />
+                下载 Markdown (.md)
+              </MenuItem>
+              <MenuItem
+                onClick={handleDownloadPDF}
+                sx={{
+                  color: '#fff',
+                  '&:hover': {
+                    background: 'rgba(102, 126, 234, 0.2)',
+                  },
+                }}
+              >
+                <DownloadIcon sx={{ mr: 1, fontSize: 20 }} />
+                下载 PDF (.pdf)
+              </MenuItem>
+            </Menu>
+          </Box>
         </Box>
       </Paper>
 
@@ -178,8 +360,9 @@ function EvaluationReportPage() {
       <Box sx={{ p: 4 }}>
         <Grid container spacing={3}>
           {/* Overall Score */}
-          <Grid item xs={12}>
+          <Grid item xs={12} className="avoid-break">
             <Paper
+              className="print-optimize"
               sx={{
                 p: 4,
                 background: performanceLevel.bgColor,
@@ -190,7 +373,7 @@ function EvaluationReportPage() {
               }}
             >
               <Typography variant="h3" sx={{ color: performanceLevel.color, fontWeight: 700, mb: 1 }}>
-                {evaluation.total_score}/25
+                {evaluation.scores?.total_score || 0}/25
               </Typography>
               <Chip
                 label={performanceLevel.label}
@@ -210,13 +393,14 @@ function EvaluationReportPage() {
           </Grid>
 
           {/* Radar Chart */}
-          <Grid item xs={12} md={6}>
+          <Grid item xs={12} md={6} className="avoid-break">
             <RadarChart scores={evaluation.scores} />
           </Grid>
 
           {/* Score Breakdown */}
-          <Grid item xs={12} md={6}>
+          <Grid item xs={12} md={6} className="avoid-break">
             <Paper
+              className="print-optimize"
               sx={{
                 p: 3,
                 background: 'rgba(255, 255, 255, 0.03)',
@@ -270,8 +454,9 @@ function EvaluationReportPage() {
           </Grid>
 
           {/* Strengths */}
-          <Grid item xs={12} md={6}>
+          <Grid item xs={12} md={6} className="avoid-break">
             <Paper
+              className="print-optimize"
               sx={{
                 p: 3,
                 background: 'rgba(67, 233, 123, 0.1)',
@@ -305,8 +490,9 @@ function EvaluationReportPage() {
           </Grid>
 
           {/* Weaknesses */}
-          <Grid item xs={12} md={6}>
+          <Grid item xs={12} md={6} className="avoid-break">
             <Paper
+              className="print-optimize"
               sx={{
                 p: 3,
                 background: 'rgba(255, 167, 38, 0.1)',
@@ -340,8 +526,9 @@ function EvaluationReportPage() {
           </Grid>
 
           {/* Key Improvements */}
-          <Grid item xs={12}>
+          <Grid item xs={12} className="avoid-break">
             <Paper
+              className="print-optimize"
               sx={{
                 p: 3,
                 background: 'rgba(56, 249, 215, 0.1)',
@@ -391,8 +578,9 @@ function EvaluationReportPage() {
 
           {/* Uncompleted Tasks */}
           {evaluation.uncompleted_tasks && evaluation.uncompleted_tasks.length > 0 && (
-            <Grid item xs={12}>
+            <Grid item xs={12} className="avoid-break">
               <Paper
+                className="print-optimize"
                 sx={{
                   p: 3,
                   background: 'rgba(244, 67, 54, 0.1)',
@@ -429,6 +617,7 @@ function EvaluationReportPage() {
           {/* Stage Details */}
           <Grid item xs={12}>
             <Paper
+              className="print-optimize allow-break"
               sx={{
                 p: 3,
                 background: 'rgba(255, 255, 255, 0.03)',
@@ -443,6 +632,8 @@ function EvaluationReportPage() {
               {evaluation.stage_details?.map((stage, idx) => (
                 <Accordion
                   key={idx}
+                  defaultExpanded
+                  className="allow-break"
                   sx={{
                     background: 'rgba(255, 255, 255, 0.05)',
                     color: '#fff',
@@ -451,7 +642,7 @@ function EvaluationReportPage() {
                     borderRadius: '12px !important',
                   }}
                 >
-                  <AccordionSummary expandIcon={<ExpandMoreIcon sx={{ color: '#fff' }} />}>
+                  <AccordionSummary expandIcon={<ExpandMoreIcon sx={{ color: '#fff' }} className="no-print" />}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
                       <Typography sx={{ fontWeight: 600 }}>
                         阶段 {stage.stage}: {stage.stage_name}
