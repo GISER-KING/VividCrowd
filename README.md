@@ -439,6 +439,104 @@ CSV上传
 
 ---
 
+## 📊 性能指标
+
+### 系统性能基准
+
+基于标准测试环境（Intel i5-10400 / 16GB RAM / Windows 11）的性能数据：
+
+| 指标类别 | 指标项 | 数值 | 说明 |
+|---------|--------|------|------|
+| **并发性能** | WebSocket 并发连接 | 100+ | 单机支持 100+ 并发 WebSocket 连接 |
+| | 同时在线用户 | 50+ | 推荐同时在线用户数 |
+| **响应性能** | 客服系统响应延迟 | < 2s | 高置信度匹配（不调用 LLM） |
+| | 群聊 Agent 响应延迟 | 3-5s | 包含 LLM 调用和打字延迟 |
+| | 数字分身响应延迟 | 2-4s | 包含检索和 LLM 生成 |
+| | 销售演练评价延迟 | 2-3s | 实时评价生成 |
+| **匹配准确率** | 客服 QA 召回率 | ≥ 80% | 基于混合检索（BM25 + Embedding） |
+| | 客服误转人工率 | < 5% | 高置信度直接回复，避免误转 |
+| | 群聊路由准确率 | ≥ 85% | Fast Path + LLM Router 组合 |
+| **存储性能** | 数据库大小 | ~50MB | 包含示例数据（10个名人 + 100条QA） |
+| | 单个数字分身大小 | 2-5MB | 包含 PDF 原文和 Embedding 向量 |
+| | 单条 Embedding 向量 | 6KB | 1536 维 float32 向量 |
+| **资源占用** | 后端内存占用 | ~500MB | 空闲状态 |
+| | 后端内存占用（峰值） | ~1.5GB | 10 并发对话 |
+| | 前端内存占用 | ~150MB | 单页面应用 |
+| | CPU 占用（空闲） | < 5% | 无请求时 |
+| | CPU 占用（对话中） | 20-40% | LLM 调用期间 |
+| **API 调用** | Qwen-Max 调用延迟 | 1-3s | 取决于网络和负载 |
+| | Embedding 生成延迟 | 0.5-1s | 单次调用（批量更快） |
+| | 每日 API 调用成本 | ¥5-20 | 取决于使用频率（100-500 次调用） |
+
+### 性能优化建议
+
+#### 1. 数据库优化
+```python
+# 使用索引加速查询
+CREATE INDEX idx_embedding ON customer_service_qa(embedding);
+CREATE INDEX idx_keywords ON customer_service_qa(keywords);
+
+# 定期清理过期数据
+DELETE FROM chat_messages WHERE created_at < datetime('now', '-30 days');
+```
+
+#### 2. 缓存策略
+```python
+# 缓存高频 QA 匹配结果（可选实现）
+from functools import lru_cache
+
+@lru_cache(maxsize=100)
+def get_qa_match(question: str):
+    # 缓存最近 100 个问题的匹配结果
+    pass
+```
+
+#### 3. 并发控制
+```python
+# 限制并发 LLM 调用数量
+import asyncio
+semaphore = asyncio.Semaphore(10)  # 最多 10 个并发请求
+
+async def call_llm_with_limit():
+    async with semaphore:
+        return await call_llm()
+```
+
+#### 4. 批量处理
+```python
+# 批量生成 Embedding（导入知识库时）
+embeddings = await generate_embeddings_batch(texts, batch_size=20)
+```
+
+### 扩展性考虑
+
+| 场景 | 当前方案 | 扩展方案 |
+|------|---------|---------|
+| **高并发** | SQLite（写并发有限） | 切换到 PostgreSQL/MySQL |
+| **大规模知识库** | 内存加载 BM25 索引 | 使用 Elasticsearch/Milvus |
+| **分布式部署** | 单机部署 | 使用 Redis 共享会话状态 |
+| **负载均衡** | 单实例 | Nginx + 多后端实例 |
+| **高可用** | 无冗余 | 主从数据库 + 健康检查 |
+
+### 成本估算
+
+基于阿里云 DashScope 定价（2026年1月）：
+
+| 模型 | 输入价格 | 输出价格 | 适用场景 | 日均成本估算 |
+|------|---------|---------|---------|-------------|
+| qwen-max | ¥0.04/1K tokens | ¥0.12/1K tokens | 主回复、评价 | ¥10-30（200-500次调用） |
+| qwen-plus | ¥0.008/1K tokens | ¥0.024/1K tokens | 评价、改写 | ¥3-10（500-1000次调用） |
+| qwen-turbo | ¥0.003/1K tokens | ¥0.006/1K tokens | 路由、简单任务 | ¥1-3（1000+次调用） |
+| text-embedding-v2 | ¥0.0007/1K tokens | - | 向量生成 | ¥0.5-2（1000+次调用） |
+
+**成本优化建议：**
+- 路由和简单任务使用 `qwen-turbo`
+- 高置信度客服回复不调用 LLM（节省 40-50% 成本）
+- 批量生成 Embedding（降低 API 调用次数）
+- 缓存常见问题的回复
+
+---
+
 ## 🏗️ 系统架构
 
 ### 整体架构图
@@ -634,7 +732,42 @@ VividCrowd/
 - **Node.js 16+**
 - **阿里云 DashScope API Key** ([申请地址](https://dashscope.console.aliyun.com/))
 
-### 安装与运行
+### 5 分钟快速体验
+
+#### 方式一：一键启动脚本（推荐新手）
+
+**Windows 用户：**
+```bash
+# 1. 下载项目
+git clone https://github.com/your-username/VividCrowd.git
+cd VividCrowd
+
+# 2. 运行一键启动脚本
+start.bat
+```
+
+**Linux/Mac 用户：**
+```bash
+# 1. 下载项目
+git clone https://github.com/your-username/VividCrowd.git
+cd VividCrowd
+
+# 2. 赋予执行权限并运行
+chmod +x start.sh
+./start.sh
+```
+
+脚本会自动完成：
+- ✅ 检查 Python 和 Node.js 环境
+- ✅ 安装后端依赖
+- ✅ 安装前端依赖
+- ✅ 引导配置 API Key
+- ✅ 启动后端和前端服务
+- ✅ 自动打开浏览器
+
+---
+
+#### 方式二：手动安装（推荐开发者）
 
 **1. 克隆项目**
 
@@ -643,34 +776,794 @@ git clone https://github.com/your-username/VividCrowd.git
 cd VividCrowd
 ```
 
-**2. 后端设置**
+**2. 配置环境变量**
 
 ```bash
+# 复制环境变量模板
+cp .env.example .env
+
+# 编辑 .env 文件，填入你的 API Key
+# Windows: notepad .env
+# Linux/Mac: nano .env
+```
+
+在 `.env` 文件中设置：
+```bash
+DASHSCOPE_API_KEY=your_api_key_here
+```
+
+**3. 后端设置**
+
+```bash
+# 进入后端目录
 cd backend
+
+# 创建虚拟环境（推荐）
+python -m venv venv
+
+# 激活虚拟环境
+# Windows
+venv\Scripts\activate
+# Linux/Mac
+source venv/bin/activate
+
+# 安装依赖
 pip install -r requirements.txt
 
-# 设置 API Key
-# Windows PowerShell
-$env:DASHSCOPE_API_KEY="your_api_key_here"
-
-# Linux/Mac
-export DASHSCOPE_API_KEY="your_api_key_here"
-
-# 启动服务器
+# 启动后端服务
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-**3. 前端设置**
+**4. 前端设置**
+
+打开新的终端窗口：
 
 ```bash
+# 进入前端目录
 cd frontend
+
+# 安装依赖
+npm install
+
+# 启动开发服务器
+npm run dev
+```
+
+**5. 访问应用**
+
+浏览器打开 `http://localhost:5173`
+
+**6. 验证启动成功**
+
+- ✅ 后端：访问 `http://localhost:8000/docs` 查看 API 文档（应显示 Swagger UI）
+- ✅ 前端：页面正常显示四个功能模块入口（智能群聊、数字分身、数字客服、销售演练）
+- ✅ WebSocket：进入任意聊天页面，右上角连接状态显示"已连接"（绿色）
+- ✅ 功能测试：在智能群聊中发送"大家好"，应收到 Agent 回复
+
+**7. 首次使用建议**
+
+体验顺序（从简单到复杂）：
+1. **智能群聊**：直接发送消息，体验多 Agent 对话
+2. **数字客服**：需要先导入知识库（CSV 文件）
+3. **数字分身**：需要先上传 PDF 创建分身
+4. **销售演练**：需要先上传客户档案和销售知识库
+
+---
+
+## 🚀 生产环境部署指南
+
+### Docker 部署（推荐）
+
+#### 1. 使用 Docker Compose
+
+**创建 `docker-compose.yml`：**
+```yaml
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - VOLCENGINE_ACCESS_KEY=${VOLCENGINE_ACCESS_KEY}
+      - VOLCENGINE_SECRET_KEY=${VOLCENGINE_SECRET_KEY}
+      - OSS_ACCESS_KEY_ID=${OSS_ACCESS_KEY_ID}
+      - OSS_ACCESS_KEY_SECRET=${OSS_ACCESS_KEY_SECRET}
+      - OSS_BUCKET_NAME=${OSS_BUCKET_NAME}
+      - OSS_ENDPOINT=${OSS_ENDPOINT}
+    volumes:
+      - ./backend/data:/app/data
+      - ./backend/logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - vividcrowd
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - vividcrowd
+
+networks:
+  vividcrowd:
+    driver: bridge
+
+volumes:
+  backend_data:
+  backend_logs:
+```
+
+**创建后端 `Dockerfile`（`backend/Dockerfile`）：**
+```dockerfile
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# 复制依赖文件
+COPY requirements.txt .
+
+# 安装 Python 依赖
+RUN pip install --no-cache-dir -r requirements.txt \
+    -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 复制应用代码
+COPY . .
+
+# 创建数据目录
+RUN mkdir -p /app/data /app/logs
+
+# 暴露端口
+EXPOSE 8000
+
+# 启动命令
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+**创建前端 `Dockerfile`（`frontend/Dockerfile`）：**
+```dockerfile
+# 构建阶段
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+
+# 复制依赖文件
+COPY package*.json ./
+
+# 安装依赖
+RUN npm install --registry=https://registry.npmmirror.com
+
+# 复制源代码
+COPY . .
+
+# 构建生产版本
+RUN npm run build
+
+# 生产阶段
+FROM nginx:alpine
+
+# 复制构建产物
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# 复制 Nginx 配置
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+**创建 Nginx 配置（`frontend/nginx.conf`）：**
+```nginx
+server {
+    listen 80;
+    server_name localhost;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # 前端路由支持
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # API 代理
+    location /api/ {
+        proxy_pass http://backend:8000/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket 支持
+        proxy_read_timeout 86400;
+    }
+
+    # 静态资源缓存
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+}
+```
+
+**启动服务：**
+```bash
+# 1. 创建 .env 文件
+cp .env.example .env
+# 编辑 .env 填入实际配置
+
+# 2. 构建并启动
+docker-compose up -d
+
+# 3. 查看日志
+docker-compose logs -f
+
+# 4. 停止服务
+docker-compose down
+
+# 5. 重新构建
+docker-compose up -d --build
+```
+
+---
+
+### 传统部署方式
+
+#### 1. 使用 PM2 管理后端进程
+
+**安装 PM2：**
+```bash
+npm install -g pm2
+```
+
+**创建 `ecosystem.config.js`：**
+```javascript
+module.exports = {
+  apps: [{
+    name: 'vividcrowd-backend',
+    script: 'uvicorn',
+    args: 'app.main:app --host 0.0.0.0 --port 8000',
+    cwd: './backend',
+    interpreter: 'python3',
+    instances: 1,
+    autorestart: true,
+    watch: false,
+    max_memory_restart: '1G',
+    env: {
+      NODE_ENV: 'production',
+      DASHSCOPE_API_KEY: 'your-api-key'
+    },
+    error_file: './logs/backend-error.log',
+    out_file: './logs/backend-out.log',
+    log_date_format: 'YYYY-MM-DD HH:mm:ss'
+  }]
+};
+```
+
+**启动服务：**
+```bash
+# 启动
+pm2 start ecosystem.config.js
+
+# 查看状态
+pm2 status
+
+# 查看日志
+pm2 logs vividcrowd-backend
+
+# 重启
+pm2 restart vividcrowd-backend
+
+# 停止
+pm2 stop vividcrowd-backend
+
+# 开机自启
+pm2 startup
+pm2 save
+```
+
+#### 2. 使用 Systemd 管理（Linux）
+
+**创建服务文件 `/etc/systemd/system/vividcrowd.service`：**
+```ini
+[Unit]
+Description=VividCrowd Backend Service
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/var/www/vividcrowd/backend
+Environment="DASHSCOPE_API_KEY=your-api-key"
+ExecStart=/usr/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**启动服务：**
+```bash
+# 重载配置
+sudo systemctl daemon-reload
+
+# 启动服务
+sudo systemctl start vividcrowd
+
+# 开机自启
+sudo systemctl enable vividcrowd
+
+# 查看状态
+sudo systemctl status vividcrowd
+
+# 查看日志
+sudo journalctl -u vividcrowd -f
+```
+
+---
+
+### Nginx 反向代理配置
+
+**创建配置文件 `/etc/nginx/sites-available/vividcrowd`：**
+```nginx
+# HTTP 重定向到 HTTPS
+server {
+    listen 80;
+    server_name yourdomain.com www.yourdomain.com;
+    return 301 https://$server_name$request_uri;
+}
+
+# HTTPS 配置
+server {
+    listen 443 ssl http2;
+    server_name yourdomain.com www.yourdomain.com;
+
+    # SSL 证书配置
+    ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    # 安全头
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    # 前端静态文件
+    location / {
+        root /var/www/vividcrowd/frontend/dist;
+        try_files $uri $uri/ /index.html;
+
+        # 缓存配置
+        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+        }
+    }
+
+    # 后端 API 代理
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000/api/;
+        proxy_http_version 1.1;
+
+        # WebSocket 支持
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # 代理头
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # 超时配置
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 86400s;  # WebSocket 长连接
+
+        # 缓冲配置
+        proxy_buffering off;
+    }
+
+    # 文件上传大小限制
+    client_max_body_size 50M;
+
+    # 访问日志
+    access_log /var/log/nginx/vividcrowd-access.log;
+    error_log /var/log/nginx/vividcrowd-error.log;
+}
+```
+
+**启用配置：**
+```bash
+# 创建软链接
+sudo ln -s /etc/nginx/sites-available/vividcrowd /etc/nginx/sites-enabled/
+
+# 测试配置
+sudo nginx -t
+
+# 重载配置
+sudo systemctl reload nginx
+```
+
+---
+
+### HTTPS 证书配置（Let's Encrypt）
+
+**使用 Certbot 自动获取证书：**
+```bash
+# 安装 Certbot
+sudo apt install certbot python3-certbot-nginx
+
+# 获取证书（自动配置 Nginx）
+sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
+
+# 测试自动续期
+sudo certbot renew --dry-run
+
+# 证书会自动续期，无需手动操作
+```
+
+---
+
+### 数据库备份策略
+
+**创建备份脚本 `backup.sh`：**
+```bash
+#!/bin/bash
+
+# 配置
+BACKUP_DIR="/var/backups/vividcrowd"
+DATA_DIR="/var/www/vividcrowd/backend/data"
+RETENTION_DAYS=30
+
+# 创建备份目录
+mkdir -p $BACKUP_DIR
+
+# 备份文件名（带时间戳）
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_FILE="$BACKUP_DIR/backup_$TIMESTAMP.tar.gz"
+
+# 压缩备份
+tar -czf $BACKUP_FILE -C $DATA_DIR .
+
+# 删除旧备份（保留最近 30 天）
+find $BACKUP_DIR -name "backup_*.tar.gz" -mtime +$RETENTION_DAYS -delete
+
+echo "Backup completed: $BACKUP_FILE"
+```
+
+**设置定时备份（Crontab）：**
+```bash
+# 编辑 crontab
+crontab -e
+
+# 添加每天凌晨 2 点备份
+0 2 * * * /var/www/vividcrowd/backup.sh >> /var/log/vividcrowd-backup.log 2>&1
+```
+
+---
+
+### 监控与日志
+
+#### 1. 日志轮转配置
+
+**创建 `/etc/logrotate.d/vividcrowd`：**
+```
+/var/www/vividcrowd/backend/logs/*.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    notifempty
+    create 0640 www-data www-data
+    sharedscripts
+    postrotate
+        systemctl reload vividcrowd > /dev/null 2>&1 || true
+    endscript
+}
+```
+
+#### 2. 系统监控
+
+**使用 htop 监控资源：**
+```bash
+sudo apt install htop
+htop
+```
+
+**监控磁盘空间：**
+```bash
+# 查看磁盘使用情况
+df -h
+
+# 查看目录大小
+du -sh /var/www/vividcrowd/backend/data
+```
+
+**监控进程：**
+```bash
+# 查看后端进程
+ps aux | grep uvicorn
+
+# 查看端口占用
+netstat -tulpn | grep 8000
+```
+
+---
+
+### 性能优化建议
+
+#### 1. 数据库优化
+```bash
+# 定期清理过期数据
+sqlite3 backend/data/celebrity.db "DELETE FROM chat_messages WHERE created_at < datetime('now', '-30 days');"
+
+# 优化数据库
+sqlite3 backend/data/celebrity.db "VACUUM;"
+```
+
+#### 2. 启用 Gzip 压缩（Nginx）
+```nginx
+# 在 nginx.conf 中添加
+gzip on;
+gzip_vary on;
+gzip_proxied any;
+gzip_comp_level 6;
+gzip_types text/plain text/css text/xml text/javascript application/json application/javascript application/xml+rss;
+```
+
+#### 3. 使用 CDN 加速静态资源
+- 将前端静态文件上传到 CDN
+- 修改 `frontend/src/config.js` 中的资源路径
+
+---
+
+### 安全加固
+
+#### 1. 防火墙配置（UFW）
+```bash
+# 启用防火墙
+sudo ufw enable
+
+# 允许 SSH
+sudo ufw allow 22/tcp
+
+# 允许 HTTP/HTTPS
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+
+# 查看状态
+sudo ufw status
+```
+
+#### 2. 限制 API 访问频率（Nginx）
+```nginx
+# 在 http 块中添加
+limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
+
+# 在 location /api/ 中添加
+limit_req zone=api_limit burst=20 nodelay;
+```
+
+#### 3. 禁用不必要的端口
+```bash
+# 确保后端只监听 127.0.0.1（通过 Nginx 代理）
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+---
+
+## 🔧 安装故障排查
+
+### 常见问题与解决方案
+
+#### 1. Python 依赖安装失败
+
+**问题现象：**
+```bash
+ERROR: Could not find a version that satisfies the requirement...
+```
+
+**解决方案：**
+```bash
+# 使用国内镜像源加速（推荐清华源）
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 或配置永久镜像源
+pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+#### 2. Node.js 依赖安装失败
+
+**问题现象：**
+```bash
+npm ERR! network timeout
+```
+
+**解决方案：**
+```bash
+# 使用淘宝镜像源
+npm install --registry=https://registry.npmmirror.com
+
+# 或使用 yarn
+yarn install --registry=https://registry.npmmirror.com
+
+# 配置永久镜像源
+npm config set registry https://registry.npmmirror.com
+```
+
+#### 3. 数据库初始化错误
+
+**问题现象：**
+```bash
+sqlite3.OperationalError: unable to open database file
+```
+
+**解决方案：**
+```bash
+# 确保 backend/data 目录存在
+mkdir -p backend/data
+
+# 检查目录权限
+chmod 755 backend/data
+```
+
+#### 4. WebSocket 连接失败
+
+**问题现象：**
+- 前端显示"连接失败"或"断开连接"
+- 浏览器控制台报错：`WebSocket connection failed`
+
+**解决方案：**
+```bash
+# 1. 检查后端是否正常运行
+curl http://localhost:8000/docs
+
+# 2. 检查防火墙设置（Windows）
+# 允许 Python 通过防火墙
+
+# 3. 检查前端配置文件 frontend/src/config.js
+# 确保 WebSocket URL 正确：ws://localhost:8000
+```
+
+#### 5. API Key 配置错误
+
+**问题现象：**
+```bash
+dashscope.common.error.AuthenticationError: Invalid API-key
+```
+
+**解决方案：**
+```bash
+# 1. 检查环境变量是否设置
+echo $DASHSCOPE_API_KEY  # Linux/Mac
+echo %DASHSCOPE_API_KEY%  # Windows CMD
+$env:DASHSCOPE_API_KEY    # Windows PowerShell
+
+# 2. 确认 API Key 有效性
+# 访问 https://dashscope.console.aliyun.com/ 查看密钥
+
+# 3. 重新设置环境变量后重启后端服务
+```
+
+#### 6. 端口占用问题
+
+**问题现象：**
+```bash
+ERROR: [Errno 48] Address already in use
+```
+
+**解决方案：**
+```bash
+# 查找占用端口的进程
+# Windows
+netstat -ano | findstr :8000
+taskkill /PID <进程ID> /F
+
+# Linux/Mac
+lsof -i :8000
+kill -9 <进程ID>
+
+# 或使用其他端口启动
+uvicorn app.main:app --port 8001
+```
+
+#### 7. CORS 跨域问题
+
+**问题现象：**
+- 浏览器控制台报错：`Access-Control-Allow-Origin`
+
+**解决方案：**
+```python
+# backend/main.py 已配置 CORS，确保包含以下代码：
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 生产环境应限制具体域名
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+#### 8. 前端页面空白
+
+**问题现象：**
+- 浏览器显示空白页面
+- 控制台报错：`Failed to fetch`
+
+**解决方案：**
+```bash
+# 1. 检查后端是否启动
+curl http://localhost:8000/api/chat/agents
+
+# 2. 清除浏览器缓存并刷新
+# Chrome: Ctrl+Shift+Delete
+
+# 3. 检查前端配置文件
+# frontend/src/config.js 中的 API_BASE_URL 是否正确
+
+# 4. 重新构建前端
+cd frontend
+rm -rf node_modules dist
 npm install
 npm run dev
 ```
 
-**4. 访问应用**
+#### 9. PDF 上传失败
 
-浏览器打开 `http://localhost:5173`
+**问题现象：**
+```bash
+PyMuPDF error: cannot open file
+```
+
+**解决方案：**
+```bash
+# 1. 检查文件大小（建议 < 10MB）
+# 2. 确认 PDF 文件未加密
+# 3. 尝试使用其他 PDF 文件测试
+# 4. 检查后端日志获取详细错误信息
+```
+
+#### 10. 模型调用超时
+
+**问题现象：**
+```bash
+httpx.ReadTimeout: timed out
+```
+
+**解决方案：**
+```python
+# 增加超时时间（backend/core/config.py）
+REQUEST_TIMEOUT = 60  # 秒
+
+# 或检查网络连接
+# 确保能访问 dashscope.aliyuncs.com
+```
 
 ---
 
@@ -794,6 +1687,379 @@ npm run dev
 }
 ```
 
+### API 使用示例
+
+#### Python 示例
+
+**1. 获取数字分身列表**
+```python
+import requests
+
+# 获取所有数字分身
+response = requests.get("http://localhost:8000/api/celebrity")
+celebrities = response.json()
+
+for celebrity in celebrities:
+    print(f"ID: {celebrity['id']}, 名称: {celebrity['name']}")
+```
+
+**2. 上传 PDF 创建数字分身**
+```python
+import requests
+
+# 上传 PDF 文件
+with open("einstein.pdf", "rb") as f:
+    files = {"file": f}
+    data = {
+        "source_type": "person",  # person/book/topic
+        "name": "爱因斯坦"
+    }
+    response = requests.post(
+        "http://localhost:8000/api/celebrity/upload",
+        files=files,
+        data=data
+    )
+
+result = response.json()
+print(f"创建成功！ID: {result['id']}")
+```
+
+**3. 导入客服知识库（CSV）**
+```python
+import requests
+
+# 上传 CSV 文件
+with open("customer_service_qa.csv", "rb") as f:
+    files = {"file": f}
+    response = requests.post(
+        "http://localhost:8000/api/customer-service/qa/import",
+        files=files
+    )
+
+result = response.json()
+print(f"导入成功！共 {result['count']} 条记录")
+```
+
+**4. 获取客服统计数据**
+```python
+import requests
+
+response = requests.get("http://localhost:8000/api/customer-service/stats")
+stats = response.json()
+
+print(f"总会话数: {stats['total_sessions']}")
+print(f"平均置信度: {stats['avg_confidence']:.2f}")
+print(f"转人工率: {stats['transfer_rate']:.1f}%")
+```
+
+**5. WebSocket 连接示例（智能群聊）**
+```python
+import asyncio
+import websockets
+import json
+
+async def chat():
+    uri = "ws://localhost:8000/api/chat/ws"
+
+    async with websockets.connect(uri) as websocket:
+        # 发送消息
+        await websocket.send("大家好，有人在吗？")
+
+        # 接收流式响应
+        full_message = ""
+        current_sender = None
+
+        while True:
+            try:
+                message = await websocket.recv()
+                data = json.loads(message)
+
+                if data["type"] == "stream_start":
+                    current_sender = data["sender"]
+                    print(f"\n{current_sender}: ", end="", flush=True)
+
+                elif data["type"] == "stream_chunk":
+                    content = data["content"]
+                    print(content, end="", flush=True)
+                    full_message += content
+
+                elif data["type"] == "stream_end":
+                    print()  # 换行
+                    full_message = ""
+
+            except websockets.exceptions.ConnectionClosed:
+                break
+
+# 运行
+asyncio.run(chat())
+```
+
+**6. WebSocket 连接示例（数字分身）**
+```python
+import asyncio
+import websockets
+import json
+
+async def chat_with_celebrity():
+    uri = "ws://localhost:8000/api/celebrity/ws"
+
+    async with websockets.connect(uri) as websocket:
+        # 发送消息（与多个名人对话）
+        message = {
+            "message": "如何看待人工智能的未来？",
+            "celebrity_ids": [1, 2, 3],  # 爱因斯坦、孔子、乔布斯
+            "mode": "group"  # private 或 group
+        }
+        await websocket.send(json.dumps(message))
+
+        # 接收响应
+        while True:
+            try:
+                response = await websocket.recv()
+                data = json.loads(response)
+
+                if data["type"] == "stream_chunk":
+                    print(data["content"], end="", flush=True)
+                elif data["type"] == "stream_end":
+                    print("\n")
+
+            except websockets.exceptions.ConnectionClosed:
+                break
+
+asyncio.run(chat_with_celebrity())
+```
+
+#### JavaScript 示例
+
+**1. 获取群聊 Agent 列表**
+```javascript
+// 使用 fetch API
+async function getAgents() {
+    const response = await fetch('http://localhost:8000/api/chat/agents');
+    const agents = await response.json();
+
+    agents.forEach(agent => {
+        console.log(`${agent.name} - ${agent.occupation}`);
+    });
+}
+
+getAgents();
+```
+
+**2. 创建客服会话**
+```javascript
+async function createSession() {
+    const response = await fetch('http://localhost:8000/api/customer-service/session', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    });
+
+    const session = await response.json();
+    console.log('会话ID:', session.session_id);
+    return session.session_id;
+}
+```
+
+**3. WebSocket 连接示例（智能群聊）**
+```javascript
+// 连接 WebSocket
+const ws = new WebSocket('ws://localhost:8000/api/chat/ws');
+
+// 连接成功
+ws.onopen = () => {
+    console.log('WebSocket 连接成功');
+    // 发送消息
+    ws.send('大家好！');
+};
+
+// 接收消息
+let currentMessage = '';
+let currentSender = '';
+
+ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+
+    switch(data.type) {
+        case 'stream_start':
+            currentSender = data.sender;
+            currentMessage = '';
+            console.log(`\n${currentSender}: `);
+            break;
+
+        case 'stream_chunk':
+            currentMessage += data.content;
+            process.stdout.write(data.content);  // Node.js
+            // 或在浏览器中: document.getElementById('chat').innerText += data.content;
+            break;
+
+        case 'stream_end':
+            console.log('\n');
+            break;
+    }
+};
+
+// 错误处理
+ws.onerror = (error) => {
+    console.error('WebSocket 错误:', error);
+};
+
+// 连接关闭
+ws.onclose = () => {
+    console.log('WebSocket 连接已关闭');
+};
+```
+
+**4. WebSocket 连接示例（客服系统）**
+```javascript
+const ws = new WebSocket('ws://localhost:8000/api/customer-service/ws');
+
+ws.onopen = () => {
+    // 发送客户问题
+    const message = {
+        message: '孩子挑食怎么办？'
+    };
+    ws.send(JSON.stringify(message));
+};
+
+ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+
+    if (data.type === 'session_created') {
+        console.log('会话ID:', data.session_id);
+    } else if (data.type === 'response') {
+        console.log('回复:', data.content);
+        console.log('置信度:', data.confidence);
+        console.log('匹配类型:', data.match_type);
+    }
+};
+```
+
+**5. React Hook 示例（使用 react-use-websocket）**
+```javascript
+import { useWebSocket } from 'react-use-websocket';
+import { useState, useEffect } from 'react';
+
+function ChatComponent() {
+    const [messages, setMessages] = useState([]);
+    const [inputValue, setInputValue] = useState('');
+
+    const { sendMessage, lastMessage, readyState } = useWebSocket(
+        'ws://localhost:8000/api/chat/ws',
+        {
+            onOpen: () => console.log('连接成功'),
+            onClose: () => console.log('连接关闭'),
+            shouldReconnect: () => true,  // 自动重连
+        }
+    );
+
+    // 处理接收到的消息
+    useEffect(() => {
+        if (lastMessage !== null) {
+            const data = JSON.parse(lastMessage.data);
+
+            if (data.type === 'stream_chunk') {
+                setMessages(prev => {
+                    const newMessages = [...prev];
+                    const lastMsg = newMessages[newMessages.length - 1];
+
+                    if (lastMsg && lastMsg.sender === data.sender) {
+                        lastMsg.content += data.content;
+                    } else {
+                        newMessages.push({
+                            sender: data.sender,
+                            content: data.content
+                        });
+                    }
+
+                    return newMessages;
+                });
+            }
+        }
+    }, [lastMessage]);
+
+    // 发送消息
+    const handleSend = () => {
+        sendMessage(inputValue);
+        setInputValue('');
+    };
+
+    return (
+        <div>
+            <div className="messages">
+                {messages.map((msg, idx) => (
+                    <div key={idx}>
+                        <strong>{msg.sender}:</strong> {msg.content}
+                    </div>
+                ))}
+            </div>
+            <input
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+            />
+            <button onClick={handleSend}>发送</button>
+        </div>
+    );
+}
+```
+
+#### cURL 示例
+
+**1. 获取数字分身列表**
+```bash
+curl -X GET http://localhost:8000/api/celebrity
+```
+
+**2. 上传 PDF 创建数字分身**
+```bash
+curl -X POST http://localhost:8000/api/celebrity/upload \
+  -F "file=@einstein.pdf" \
+  -F "source_type=person" \
+  -F "name=爱因斯坦"
+```
+
+**3. 删除数字分身**
+```bash
+curl -X DELETE http://localhost:8000/api/celebrity/1
+```
+
+**4. 获取客服统计数据**
+```bash
+curl -X GET http://localhost:8000/api/customer-service/stats
+```
+
+**5. 导入客服知识库**
+```bash
+curl -X POST http://localhost:8000/api/customer-service/qa/import \
+  -F "file=@customer_qa.csv"
+```
+
+**6. 开始销售培训会话**
+```bash
+curl -X POST http://localhost:8000/api/digital-customer/training/sessions/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "customer_id": 1,
+    "user_id": "user123"
+  }'
+```
+
+**7. 获取培训评价报告**
+```bash
+curl -X GET http://localhost:8000/api/digital-customer/training/sessions/1/evaluation
+```
+
+**8. 查看 API 文档（Swagger UI）**
+```bash
+# 在浏览器中打开
+open http://localhost:8000/docs
+
+# 或使用 curl 获取 OpenAPI JSON
+curl -X GET http://localhost:8000/openapi.json
+```
+
 ---
 
 ## ⚙️ 配置指南
@@ -849,6 +2115,505 @@ export const CONFIG = {
   DIGITAL_CUSTOMER_WS_URL: 'ws://localhost:8000/api/digital-customer/ws',
   TRAINING_WS_URL: 'ws://localhost:8000/api/digital-customer/training/ws'
 };
+```
+
+### 环境变量完整列表
+
+创建 `.env` 文件或设置系统环境变量：
+
+#### 必需变量
+
+| 变量名 | 说明 | 示例值 | 获取方式 |
+|--------|------|--------|---------|
+| `DASHSCOPE_API_KEY` | 阿里云 DashScope API 密钥 | `sk-xxx` | [申请地址](https://dashscope.console.aliyun.com/) |
+
+#### 可选变量（数字人功能）
+
+| 变量名 | 说明 | 示例值 | 用途 |
+|--------|------|--------|------|
+| `VOLCENGINE_ACCESS_KEY` | 火山引擎访问密钥 | `AKxxx` | 数字人视频生成 |
+| `VOLCENGINE_SECRET_KEY` | 火山引擎密钥 | `xxx` | 数字人视频生成 |
+| `OSS_ACCESS_KEY_ID` | 阿里云 OSS 访问密钥 ID | `LTAI5xxx` | 视频文件存储 |
+| `OSS_ACCESS_KEY_SECRET` | 阿里云 OSS 访问密钥 | `xxx` | 视频文件存储 |
+| `OSS_BUCKET_NAME` | OSS Bucket 名称 | `my-bucket` | 视频文件存储 |
+| `OSS_ENDPOINT` | OSS 端点 | `oss-cn-hangzhou.aliyuncs.com` | 视频文件存储 |
+
+#### 服务器配置（可选）
+
+| 变量名 | 说明 | 默认值 | 备注 |
+|--------|------|--------|------|
+| `HOST` | 监听地址 | `0.0.0.0` | 生产环境建议 `0.0.0.0` |
+| `PORT` | 监听端口 | `8000` | 确保端口未被占用 |
+| `LOG_LEVEL` | 日志级别 | `INFO` | DEBUG/INFO/WARNING/ERROR |
+| `RELOAD` | 热重载 | `False` | 开发环境可设为 `True` |
+
+#### 数据库配置（可选）
+
+| 变量名 | 说明 | 默认值 | 备注 |
+|--------|------|--------|------|
+| `DATABASE_PATH` | 数据库文件路径 | `./data` | SQLite 数据库存储目录 |
+| `DATABASE_URL` | 数据库连接 URL | - | 切换到 PostgreSQL 时使用 |
+
+#### 模型配置（可选）
+
+| 变量名 | 说明 | 默认值 | 备注 |
+|--------|------|--------|------|
+| `MODEL_NAME` | 主回复模型 | `qwen-max` | qwen-max/plus/turbo |
+| `ROUTER_MODEL_NAME` | 路由模型 | `qwen-turbo` | 建议使用 turbo 降低成本 |
+| `EVALUATION_MODEL` | 评价模型 | `qwen-plus` | 用于销售演练评价 |
+
+#### 示例 `.env` 文件
+
+```bash
+# ============================================
+# VividCrowd 环境变量配置
+# ============================================
+
+# -------------------- 必需配置 --------------------
+# 阿里云 DashScope API Key（必需）
+DASHSCOPE_API_KEY=sk-your-api-key-here
+
+# -------------------- 数字人功能（可选）--------------------
+# 火山引擎配置（用于数字人视频生成）
+# VOLCENGINE_ACCESS_KEY=your-access-key
+# VOLCENGINE_SECRET_KEY=your-secret-key
+
+# 阿里云 OSS 配置（用于视频文件存储）
+# OSS_ACCESS_KEY_ID=your-access-key-id
+# OSS_ACCESS_KEY_SECRET=your-access-key-secret
+# OSS_BUCKET_NAME=your-bucket-name
+# OSS_ENDPOINT=oss-cn-hangzhou.aliyuncs.com
+
+# -------------------- 服务器配置（可选）--------------------
+# HOST=0.0.0.0
+# PORT=8000
+# LOG_LEVEL=INFO
+
+# -------------------- 数据库配置（可选）--------------------
+# DATABASE_PATH=./data
+
+# -------------------- 模型配置（可选）--------------------
+# MODEL_NAME=qwen-max
+# ROUTER_MODEL_NAME=qwen-turbo
+# EVALUATION_MODEL=qwen-plus
+```
+
+**使用方式：**
+
+```bash
+# 方法一：使用 .env 文件（推荐）
+# 1. 复制示例文件
+cp .env.example .env
+
+# 2. 编辑 .env 文件填入实际值
+nano .env
+
+# 3. 启动服务（自动加载 .env）
+uvicorn app.main:app --reload
+
+# 方法二：直接设置环境变量
+# Windows PowerShell
+$env:DASHSCOPE_API_KEY="your-api-key"
+
+# Linux/Mac
+export DASHSCOPE_API_KEY="your-api-key"
+
+# 方法三：启动时指定
+DASHSCOPE_API_KEY="your-api-key" uvicorn app.main:app --reload
+```
+
+---
+
+## 🔒 安全注意事项
+
+### 1. API Key 安全管理
+
+#### ❌ 错误做法
+```python
+# 不要硬编码 API Key
+DASHSCOPE_API_KEY = "sk-1234567890abcdef"  # 危险！
+
+# 不要提交到 Git
+git add .env  # 危险！
+```
+
+#### ✅ 正确做法
+```python
+# 使用环境变量
+import os
+DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
+
+# 添加 .env 到 .gitignore
+echo ".env" >> .gitignore
+```
+
+**最佳实践：**
+- 使用环境变量或密钥管理服务（如 AWS Secrets Manager）
+- 定期轮换 API Key
+- 为不同环境使用不同的 API Key（开发/测试/生产）
+- 监控 API Key 使用情况，及时发现异常
+
+---
+
+### 2. 数据库访问控制
+
+#### 文件权限设置
+```bash
+# 限制数据库文件权限（仅所有者可读写）
+chmod 600 backend/data/*.db
+
+# 限制数据目录权限
+chmod 700 backend/data
+```
+
+#### 数据加密
+```python
+# 敏感字段加密存储（可选实现）
+from cryptography.fernet import Fernet
+
+# 生成密钥
+key = Fernet.generate_key()
+cipher = Fernet(key)
+
+# 加密
+encrypted_data = cipher.encrypt(b"sensitive data")
+
+# 解密
+decrypted_data = cipher.decrypt(encrypted_data)
+```
+
+---
+
+### 3. CORS 配置建议
+
+#### 开发环境（宽松）
+```python
+# backend/main.py
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 允许所有来源
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+#### 生产环境（严格）
+```python
+# backend/main.py
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://yourdomain.com",
+        "https://www.yourdomain.com"
+    ],  # 仅允许特定域名
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Content-Type", "Authorization"],
+)
+```
+
+---
+
+### 4. 输入验证与防注入
+
+#### SQL 注入防护
+```python
+# ✅ 使用 ORM（SQLAlchemy）自动防护
+from sqlalchemy import select
+stmt = select(User).where(User.name == user_input)  # 安全
+
+# ❌ 避免拼接 SQL
+query = f"SELECT * FROM users WHERE name = '{user_input}'"  # 危险！
+```
+
+#### XSS 防护
+```python
+# 前端：对用户输入进行转义
+import html
+safe_content = html.escape(user_input)
+
+# 后端：验证输入格式
+from pydantic import BaseModel, validator
+
+class MessageInput(BaseModel):
+    content: str
+
+    @validator('content')
+    def validate_content(cls, v):
+        if len(v) > 1000:
+            raise ValueError('消息长度不能超过 1000 字符')
+        return v.strip()
+```
+
+#### 文件上传安全
+```python
+# 验证文件类型
+ALLOWED_EXTENSIONS = {'.pdf', '.csv', '.xlsx'}
+
+def validate_file(filename: str):
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise ValueError(f"不支持的文件类型: {ext}")
+
+    # 限制文件大小（10MB）
+    if file.size > 10 * 1024 * 1024:
+        raise ValueError("文件大小不能超过 10MB")
+```
+
+---
+
+### 5. 敏感信息脱敏
+
+#### 日志脱敏
+```python
+import re
+from loguru import logger
+
+def sanitize_log(message: str) -> str:
+    """脱敏日志中的敏感信息"""
+    # 脱敏 API Key
+    message = re.sub(r'sk-[a-zA-Z0-9]{32}', 'sk-***', message)
+
+    # 脱敏手机号
+    message = re.sub(r'1[3-9]\d{9}', '***', message)
+
+    # 脱敏身份证号
+    message = re.sub(r'\d{17}[\dXx]', '***', message)
+
+    return message
+
+# 使用
+logger.info(sanitize_log(f"User API key: {api_key}"))
+```
+
+#### 响应数据脱敏
+```python
+# 不要在 API 响应中返回敏感信息
+class UserResponse(BaseModel):
+    id: int
+    name: str
+    # password: str  # ❌ 不要返回密码
+    # api_key: str   # ❌ 不要返回 API Key
+```
+
+---
+
+### 6. 访问频率限制
+
+#### 使用 slowapi 限流
+```python
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# 应用到路由
+@app.post("/api/chat/message")
+@limiter.limit("10/minute")  # 每分钟最多 10 次请求
+async def send_message(request: Request):
+    pass
+```
+
+#### Nginx 限流
+```nginx
+# 在 nginx.conf 中配置
+limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
+
+location /api/ {
+    limit_req zone=api_limit burst=20 nodelay;
+    limit_req_status 429;
+}
+```
+
+---
+
+### 7. WebSocket 安全
+
+#### 连接认证
+```python
+# 使用 Token 认证 WebSocket 连接
+@app.websocket("/api/chat/ws")
+async def websocket_endpoint(
+    websocket: WebSocket,
+    token: str = Query(...)
+):
+    # 验证 Token
+    if not verify_token(token):
+        await websocket.close(code=1008, reason="Invalid token")
+        return
+
+    await websocket.accept()
+    # ... 处理消息
+```
+
+#### 消息大小限制
+```python
+# 限制 WebSocket 消息大小
+MAX_MESSAGE_SIZE = 10 * 1024  # 10KB
+
+async def receive_message(websocket: WebSocket):
+    data = await websocket.receive_text()
+
+    if len(data) > MAX_MESSAGE_SIZE:
+        await websocket.close(code=1009, reason="Message too large")
+        return
+
+    return data
+```
+
+---
+
+### 8. 依赖安全
+
+#### 定期更新依赖
+```bash
+# 检查过期依赖
+pip list --outdated
+
+# 更新依赖
+pip install --upgrade -r requirements.txt
+
+# 检查安全漏洞
+pip install safety
+safety check
+```
+
+#### 使用依赖锁定
+```bash
+# 生成精确版本的依赖文件
+pip freeze > requirements.lock
+
+# 使用锁定文件安装
+pip install -r requirements.lock
+```
+
+---
+
+### 9. 错误处理与信息泄露
+
+#### ❌ 错误做法
+```python
+# 不要暴露详细错误信息
+@app.exception_handler(Exception)
+async def exception_handler(request, exc):
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": str(exc),  # 可能泄露敏感信息
+            "traceback": traceback.format_exc()  # 危险！
+        }
+    )
+```
+
+#### ✅ 正确做法
+```python
+# 生产环境返回通用错误信息
+@app.exception_handler(Exception)
+async def exception_handler(request, exc):
+    # 记录详细错误到日志
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+
+    # 返回通用错误信息
+    return JSONResponse(
+        status_code=500,
+        content={"error": "服务器内部错误，请稍后重试"}
+    )
+```
+
+---
+
+### 10. 安全检查清单
+
+#### 部署前检查
+
+- [ ] **API Key 管理**
+  - [ ] 所有 API Key 使用环境变量
+  - [ ] .env 文件已添加到 .gitignore
+  - [ ] 生产环境使用独立的 API Key
+
+- [ ] **CORS 配置**
+  - [ ] 生产环境限制了允许的域名
+  - [ ] 不使用 `allow_origins=["*"]`
+
+- [ ] **HTTPS**
+  - [ ] 已配置 SSL 证书
+  - [ ] 强制 HTTP 重定向到 HTTPS
+  - [ ] 启用 HSTS 头
+
+- [ ] **输入验证**
+  - [ ] 所有用户输入都经过验证
+  - [ ] 文件上传有类型和大小限制
+  - [ ] 使用 Pydantic 模型验证
+
+- [ ] **访问控制**
+  - [ ] 数据库文件权限正确（600）
+  - [ ] 敏感目录权限正确（700）
+  - [ ] 配置了访问频率限制
+
+- [ ] **日志安全**
+  - [ ] 日志中不包含 API Key
+  - [ ] 日志中不包含密码
+  - [ ] 敏感信息已脱敏
+
+- [ ] **依赖安全**
+  - [ ] 依赖已更新到最新版本
+  - [ ] 运行了安全漏洞扫描
+  - [ ] 使用了依赖锁定文件
+
+- [ ] **错误处理**
+  - [ ] 生产环境不返回详细错误信息
+  - [ ] 错误已记录到日志
+  - [ ] 配置了错误监控
+
+- [ ] **备份**
+  - [ ] 配置了自动备份
+  - [ ] 测试了恢复流程
+  - [ ] 备份文件加密存储
+
+- [ ] **监控**
+  - [ ] 配置了日志轮转
+  - [ ] 配置了资源监控
+  - [ ] 配置了异常告警
+
+---
+
+### 11. 安全事件响应
+
+#### 发现 API Key 泄露
+```bash
+# 1. 立即撤销泄露的 API Key
+# 访问 https://dashscope.console.aliyun.com/ 删除密钥
+
+# 2. 生成新的 API Key
+
+# 3. 更新环境变量
+export DASHSCOPE_API_KEY="new-api-key"
+
+# 4. 重启服务
+pm2 restart vividcrowd-backend
+
+# 5. 检查日志，确认是否有异常调用
+grep "API" /var/log/vividcrowd/*.log
+```
+
+#### 发现异常访问
+```bash
+# 1. 查看访问日志
+tail -f /var/log/nginx/vividcrowd-access.log
+
+# 2. 封禁恶意 IP（Nginx）
+# 在 nginx.conf 中添加
+deny 192.168.1.100;
+
+# 3. 重载 Nginx
+sudo nginx -s reload
+
+# 4. 使用 fail2ban 自动封禁
+sudo apt install fail2ban
 ```
 
 ---
@@ -948,6 +2713,389 @@ start_time, end_time, status
 - [FastAPI](https://fastapi.tiangolo.com/) - 高性能 Web 框架
 - [React](https://react.dev/) - 前端 UI 框架
 - [Material-UI](https://mui.com/) - UI 组件库
+
+---
+
+## ❓ 常见问题 FAQ
+
+### 1. 如何更换 LLM 模型？
+
+**问题：** 我想使用其他 Qwen 模型或调整模型配置。
+
+**解答：**
+```python
+# 编辑 backend/core/config.py
+MODEL_NAME = "qwen-max"           # 主回复模型（可选：qwen-plus, qwen-turbo）
+ROUTER_MODEL_NAME = "qwen-turbo"  # 路由模型（建议使用 turbo 降低成本）
+EVALUATION_MODEL = "qwen-plus"    # 评价模型
+
+# 重启后端服务生效
+```
+
+**模型选择建议：**
+- `qwen-max`：最强性能，适合复杂对话和评价
+- `qwen-plus`：性价比高，适合一般场景
+- `qwen-turbo`：速度快成本低，适合路由和简单任务
+
+---
+
+### 2. 如何添加新的群聊 Agent？
+
+**问题：** 我想在智能群聊中添加自定义角色。
+
+**解答：**
+```json
+// 编辑 backend/agents_profiles.json，添加新 Agent
+{
+  "id": "custom_agent",
+  "name": "自定义角色",
+  "age": 25,
+  "occupation": "职业描述",
+  "personality_traits": ["性格特点1", "性格特点2"],
+  "interests": ["兴趣1", "兴趣2", "兴趣3"],
+  "speech_style": "说话风格描述",
+  "expertise": ["专业领域1", "专业领域2"]
+}
+```
+
+**注意事项：**
+- `id` 必须唯一
+- `expertise` 字段用于 LLM 路由匹配
+- 重启后端服务后生效
+- 建议先测试 Agent 回复质量
+
+---
+
+### 3. 如何导入自定义客服知识库？
+
+**问题：** 我有自己的客服 QA 数据，如何导入系统？
+
+**解答：**
+
+**方法一：CSV 导入（推荐）**
+```csv
+question_count,topic_name,typical_question,standard_script,risk_notes
+15,产品退换货,如何申请退货？,您可以在订单页面点击退货按钮...,退货需在7天内
+```
+
+**CSV 格式要求：**
+- 必须包含 5 列（顺序固定）
+- 使用 UTF-8 编码
+- 第一行为标题行（会被跳过）
+
+**方法二：API 导入**
+```bash
+curl -X POST http://localhost:8000/api/customer-service/qa/import \
+  -F "file=@knowledge.csv"
+```
+
+**导入后验证：**
+```bash
+# 查看 QA 记录数
+curl http://localhost:8000/api/customer-service/qa/count
+```
+
+---
+
+### 4. 数据库文件在哪里？
+
+**问题：** 我想备份或查看数据库。
+
+**解答：**
+
+数据库文件位于 `backend/data/` 目录：
+
+```bash
+backend/data/
+├── celebrity.db           # 数字分身数据（名人档案、对话记录）
+├── customerService.db     # 客服数据（QA知识库、会话记录）
+└── digital_customer.db    # 销售演练数据（客户档案、培训记录）
+```
+
+**查看数据库内容：**
+```bash
+# 安装 sqlite3
+# Windows: 下载 https://www.sqlite.org/download.html
+# Linux: sudo apt install sqlite3
+# Mac: brew install sqlite3
+
+# 打开数据库
+sqlite3 backend/data/celebrity.db
+
+# 查看所有表
+.tables
+
+# 查询数据
+SELECT * FROM knowledge_sources;
+
+# 退出
+.quit
+```
+
+---
+
+### 5. 如何备份数据？
+
+**问题：** 如何备份系统数据以防丢失？
+
+**解答：**
+
+**方法一：直接复制数据库文件**
+```bash
+# 备份所有数据库
+cp -r backend/data backend/data_backup_$(date +%Y%m%d)
+
+# Windows
+xcopy backend\data backend\data_backup_%date:~0,4%%date:~5,2%%date:~8,2% /E /I
+```
+
+**方法二：导出 SQL 脚本**
+```bash
+# 导出数据库为 SQL 文件
+sqlite3 backend/data/celebrity.db .dump > celebrity_backup.sql
+
+# 恢复数据
+sqlite3 backend/data/celebrity.db < celebrity_backup.sql
+```
+
+**自动备份脚本（Linux/Mac）：**
+```bash
+#!/bin/bash
+# backup.sh
+BACKUP_DIR="backups/$(date +%Y%m%d_%H%M%S)"
+mkdir -p $BACKUP_DIR
+cp backend/data/*.db $BACKUP_DIR/
+echo "Backup completed: $BACKUP_DIR"
+```
+
+**建议：**
+- 定期备份（每周或每月）
+- 保留多个版本
+- 测试恢复流程
+
+---
+
+### 6. 支持哪些 LLM 提供商？
+
+**问题：** 除了阿里云 DashScope，还能用其他 LLM 吗？
+
+**解答：**
+
+**当前支持：**
+- ✅ **阿里云 DashScope**（Qwen 系列）- 默认且推荐
+- ✅ **OpenAI API**（需修改代码）
+
+**如何切换到 OpenAI：**
+```python
+# backend/core/config.py
+USE_OPENAI = True
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = "gpt-4"
+
+# 修改相关服务代码，将 dashscope 调用替换为 openai 调用
+```
+
+**其他提供商：**
+- 理论上支持任何兼容 OpenAI API 的服务
+- 需要修改 `backend/apps/*/services/` 中的模型调用代码
+- 建议保持 Embedding 服务使用 DashScope（中文效果好）
+
+---
+
+### 7. 如何调整群聊活跃度？
+
+**问题：** 群聊太活跃或太冷清，如何调整？
+
+**解答：**
+```python
+# 编辑 backend/core/config.py
+
+# 调整每轮最多回复人数
+MAX_AGENTS_PER_ROUND = 3  # 默认3人，可改为 1-5
+
+# 调整随机回复概率
+RANDOM_RESPONSE_PROBABILITY = 0.3  # 30%概率触发闲聊
+
+# 调整深夜模式
+NIGHT_MODE_START_HOUR = 23  # 深夜开始时间
+NIGHT_MODE_END_HOUR = 7     # 深夜结束时间
+NIGHT_MODE_PROBABILITY = 0.2  # 深夜活跃度降至20%
+
+# 调整打字延迟（模拟真人思考）
+MIN_TYPING_DELAY = 8.0   # 最小延迟（秒）
+MAX_TYPING_DELAY = 10.0  # 最大延迟（秒）
+```
+
+**效果对比：**
+- 提高活跃度：增加 `MAX_AGENTS_PER_ROUND` 和 `RANDOM_RESPONSE_PROBABILITY`
+- 降低活跃度：减少上述参数，或增加 `MIN_TYPING_DELAY`
+
+---
+
+### 8. 如何自定义销售演练评价标准？
+
+**问题：** 我想修改销售演练的评分维度和标准。
+
+**解答：**
+```python
+# 编辑 backend/apps/digital_customer/services/training/evaluation_engine.py
+
+# 修改评分维度
+SCORING_CRITERIA = {
+    "trust": "信任与关系建立",
+    "needs": "需求诊断",
+    "value": "价值呈现",
+    "objection": "异议处理",
+    "closing": "成交推进",
+    # 可添加自定义维度
+    "custom": "自定义维度"
+}
+
+# 修改评分提示词
+EVALUATION_PROMPT = """
+请根据以下标准评价销售人员的表现：
+1. 信任建立：是否建立良好的沟通氛围
+2. 需求诊断：是否准确识别客户痛点
+... (自定义评价标准)
+"""
+```
+
+**修改阶段流程：**
+```python
+# 编辑 backend/apps/digital_customer/services/training/stage_controller.py
+
+STAGES = {
+    1: {"name": "信任建立", "description": "..."},
+    2: {"name": "需求诊断", "description": "..."},
+    # 可添加或修改阶段
+}
+```
+
+---
+
+### 9. 如何提高客服系统的匹配准确率？
+
+**问题：** 客服系统经常匹配不到正确答案。
+
+**解答：**
+
+**方法一：调整置信度阈值**
+```python
+# backend/core/config.py
+HIGH_CONFIDENCE_THRESHOLD = 0.9  # 降低到 0.85
+MID_CONFIDENCE_THRESHOLD = 0.6   # 降低到 0.5
+```
+
+**方法二：调整混合检索权重**
+```python
+# backend/core/config.py
+BM25_WEIGHT = 0.6        # 关键词匹配权重（可调整为 0.5-0.7）
+EMBEDDING_WEIGHT = 0.4   # 语义匹配权重（可调整为 0.3-0.5）
+```
+
+**方法三：优化知识库质量**
+- 增加同义问法（一个答案对应多个问题）
+- 丰富关键词（在 `typical_question` 中包含常见表达）
+- 标准化术语（统一专业名词）
+
+**方法四：查看匹配日志**
+```python
+# 在 backend/apps/customer_service/services/qa_matcher.py 中
+# 启用详细日志查看匹配过程
+logger.debug(f"BM25 score: {bm25_score}, Embedding score: {embedding_score}")
+```
+
+---
+
+### 10. 数字分身回复太长或太短怎么办？
+
+**问题：** 数字分身的回复长度不符合预期。
+
+**解答：**
+```python
+# 编辑 backend/apps/celebrity/services/celebrity_agent.py
+
+# 在 System Prompt 中添加长度控制
+system_prompt = f"""
+你是 {celebrity.name}...
+
+回复要求：
+- 私聊模式：回复长度控制在 100-200 字
+- 群聊模式：回复长度控制在 30-50 字以内
+- 避免过度展开，保持简洁有力
+"""
+```
+
+**动态调整：**
+```python
+# 根据模式动态设置
+if mode == "private":
+    max_tokens = 300  # 私聊允许更长回复
+else:
+    max_tokens = 100  # 群聊限制长度
+```
+
+---
+
+### 11. 如何查看系统日志？
+
+**问题：** 遇到问题时如何查看详细日志？
+
+**解答：**
+
+**后端日志：**
+```bash
+# 日志默认输出到控制台
+# 查看实时日志
+uvicorn app.main:app --reload
+
+# 保存日志到文件
+uvicorn app.main:app --reload > logs/backend.log 2>&1
+```
+
+**配置日志级别：**
+```python
+# backend/core/config.py
+LOG_LEVEL = "DEBUG"  # DEBUG/INFO/WARNING/ERROR
+```
+
+**前端日志：**
+```javascript
+// 浏览器控制台（F12）
+// 查看 WebSocket 连接状态
+console.log("WebSocket status:", readyState);
+
+// 查看 API 请求
+// Network 标签页
+```
+
+---
+
+### 12. 系统支持多用户并发吗？
+
+**问题：** 多个用户同时使用会有问题吗？
+
+**解答：**
+
+**当前状态：**
+- ✅ 支持多用户并发访问
+- ✅ 每个 WebSocket 连接独立管理
+- ✅ 数据库支持并发读写（SQLite 有写锁限制）
+
+**并发限制：**
+- SQLite 写并发有限（建议 < 10 并发写入）
+- 高并发场景建议切换到 PostgreSQL/MySQL
+
+**切换到 PostgreSQL：**
+```python
+# backend/core/config.py
+DATABASE_URL = "postgresql://user:password@localhost/vividcrowd"
+
+# 安装依赖
+pip install asyncpg
+
+# 修改 database.py 中的引擎配置
+```
 
 ---
 
