@@ -2,10 +2,12 @@
 VividCrowd 后端总入口
 统一挂载三个子应用：群聊、数字分身、数字客服
 """
+import os
 import uvicorn
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from backend.core.database import init_db
@@ -16,6 +18,7 @@ from backend.apps.customer_service.app import customer_service_app, orchestrator
 from backend.apps.customer_service.services.excel_importer import import_qa_from_csv
 from backend.apps.customer_service.services.csv_registry import auto_import_csv_files
 from backend.apps.digital_customer.app import digital_customer_app, start_scheduler as start_digital_customer_scheduler, stop_scheduler as stop_digital_customer_scheduler, init_digital_customer_tables
+from backend.apps.digital_interviewer.app import router as digital_interviewer_router, scan_all_digital_humans
 
 
 @asynccontextmanager
@@ -53,6 +56,11 @@ async def lifespan(app: FastAPI):
         await orchestrator.initialize(db)
         logger.info("客服子应用初始化完成")
 
+    # 扫描数字面试官虚拟人形象库
+    logger.info("扫描虚拟人形象库...")
+    scan_all_digital_humans()
+    logger.info("数字面试官初始化完成")
+
     yield
 
     # 关闭时
@@ -84,6 +92,13 @@ app.mount("/api/celebrity", celebrity_app)
 app.mount("/api/customer-service", customer_service_app)
 app.mount("/api/digital-customer", digital_customer_app)
 
+# 挂载数字面试官路由
+app.include_router(digital_interviewer_router, prefix="/api")
+
+# 挂载静态文件服务 - 提供虚拟人形象视频访问
+DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+app.mount("/data", StaticFiles(directory=DATA_DIR), name="data")
+
 
 @app.get("/")
 async def root():
@@ -95,7 +110,8 @@ async def root():
             "chat": "/api/chat",
             "celebrity": "/api/celebrity",
             "customer_service": "/api/customer-service",
-            "digital_customer": "/api/digital-customer"
+            "digital_customer": "/api/digital-customer",
+            "digital_interviewer": "/api/digital-interviewer"
         },
         "docs": "/docs"
     }
@@ -110,7 +126,8 @@ async def health_check():
             "chat": "ok",
             "celebrity": "ok",
             "customer_service": "ok",
-            "digital_customer": "ok"
+            "digital_customer": "ok",
+            "digital_interviewer": "ok"
         }
     }
 

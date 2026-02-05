@@ -5,7 +5,10 @@
       "Bash(python -m backend.migrations.add_customer_profile_type:*)",
       "Bash(python add_customer_profile_type.py:*)",
       "Bash(python:*)",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(cd /d D:projectsVividCrowd)",
+      "Bash(dir frontendsrcpages)",
+      "Bash(dir frontendsrccomponents)"
     ],
     "deny": [],
     "ask": []

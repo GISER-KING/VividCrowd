@@ -625,3 +625,334 @@ class FinalEvaluation(Base):
             "detailed_report": self.detailed_report,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+# ==================== 数字面试官模型 ====================
+
+class InterviewerProfileRegistry(Base):
+    """面试官画像文件注册表 - 记录已导入的文件，避免重复导入"""
+    __tablename__ = "interviewer_profile_registry"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    filename = Column(String(255), unique=True, nullable=False, index=True)
+    file_hash = Column(String(64), nullable=False)
+    interviewer_profile_id = Column(Integer, nullable=True)
+    interviewer_name = Column(String(100), nullable=True)
+    status = Column(String(20), default="success")
+    imported_at = Column(DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "filename": self.filename,
+            "file_hash": self.file_hash,
+            "interviewer_profile_id": self.interviewer_profile_id,
+            "interviewer_name": self.interviewer_name,
+            "status": self.status,
+            "imported_at": self.imported_at.isoformat() if self.imported_at else None,
+        }
+
+
+class InterviewerProfile(Base):
+    """面试官画像表 - 存储面试官的结构化信息"""
+    __tablename__ = "interviewer_profiles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, index=True)
+    title = Column(String(100), nullable=True)
+    company = Column(String(100), nullable=True)
+
+    # 面试官特征
+    expertise_areas = Column(Text, nullable=True)
+    interview_style = Column(Text, nullable=True)
+    personality_traits = Column(Text, nullable=True)
+    question_preferences = Column(Text, nullable=True)
+
+    # AI相关
+    system_prompt = Column(Text, nullable=True)
+    raw_content = Column(Text, nullable=True)
+    source_file_path = Column(String(500), nullable=True)
+
+    # 时间戳
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "title": self.title,
+            "company": self.company,
+            "expertise_areas": self.expertise_areas,
+            "interview_style": self.interview_style,
+            "personality_traits": self.personality_traits,
+            "question_preferences": self.question_preferences,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
+class InterviewSession(Base):
+    """面试会话表 - 记录每次面试的完整过程"""
+    __tablename__ = "interview_sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String(64), unique=True, nullable=False, index=True)
+
+    # 关联信息
+    candidate_id = Column(String(100), nullable=True)
+    candidate_name = Column(String(100), nullable=True)
+    interviewer_profile_id = Column(Integer, ForeignKey("interviewer_profiles.id"), nullable=False)
+    digital_human_id = Column(Integer, ForeignKey("digital_humans.id"), nullable=True)  # 使用的虚拟人形象
+
+    # 冗余字段
+    interviewer_name = Column(String(100), nullable=True)
+    interviewer_title = Column(String(100), nullable=True)
+
+    # 面试配置
+    interview_type = Column(String(50), nullable=False)  # technical/hr/behavioral
+    difficulty_level = Column(String(20), nullable=True)  # easy/medium/hard
+    max_rounds = Column(Integer, default=5)  # 最大面试轮数，默认5轮
+
+    # 会话状态
+    current_round = Column(Integer, default=0)
+    total_rounds = Column(Integer, default=0)
+    status = Column(String(20), default="in_progress")  # in_progress/completed/abandoned
+
+    # 时间记录
+    started_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+    duration_seconds = Column(Integer, nullable=True)
+
+    # 时间戳
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # 关系
+    interviewer_profile = relationship("InterviewerProfile")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "session_id": self.session_id,
+            "candidate_id": self.candidate_id,
+            "candidate_name": self.candidate_name,
+            "interviewer_profile_id": self.interviewer_profile_id,
+            "interviewer_name": self.interviewer_name,
+            "interviewer_title": self.interviewer_title,
+            "interview_type": self.interview_type,
+            "difficulty_level": self.difficulty_level,
+            "max_rounds": self.max_rounds,
+            "current_round": self.current_round,
+            "total_rounds": self.total_rounds,
+            "status": self.status,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "duration_seconds": self.duration_seconds,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class InterviewRound(Base):
+    """面试轮次表 - 记录每一轮问答"""
+    __tablename__ = "interview_rounds"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(Integer, ForeignKey("interview_sessions.id"), nullable=False)
+
+    round_number = Column(Integer, nullable=False)
+
+    # 问答内容
+    question = Column(Text, nullable=False)
+    answer = Column(Text, nullable=False)
+
+    # 问题元数据
+    question_type = Column(String(50), nullable=True)
+    is_followup = Column(Boolean, default=False)
+
+    # 实时评估
+    answer_quality = Column(String(50), nullable=True)
+    evaluation_data = Column(JSON, nullable=True)
+
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+    # 关系
+    session = relationship("InterviewSession", backref="rounds")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "session_id": self.session_id,
+            "round_number": self.round_number,
+            "question": self.question,
+            "answer": self.answer,
+            "question_type": self.question_type,
+            "is_followup": self.is_followup,
+            "answer_quality": self.answer_quality,
+            "evaluation_data": self.evaluation_data,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+        }
+
+
+class InterviewEvaluation(Base):
+    """面试评估表 - 存储综合评估结果"""
+    __tablename__ = "interview_evaluations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(Integer, ForeignKey("interview_sessions.id"), unique=True, nullable=False)
+
+    # 多维度评分
+    technical_score = Column(Integer, nullable=True)
+    communication_score = Column(Integer, nullable=True)
+    problem_solving_score = Column(Integer, nullable=True)
+    cultural_fit_score = Column(Integer, nullable=True)
+
+    # 总分和等级
+    total_score = Column(Integer, nullable=True)
+    performance_level = Column(String(20), nullable=True)
+
+    # 详细分析
+    strengths = Column(JSON, nullable=True)
+    weaknesses = Column(JSON, nullable=True)
+    suggestions = Column(JSON, nullable=True)
+
+    # 报告内容
+    detailed_report = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # 关系
+    session = relationship("InterviewSession", backref="evaluation", uselist=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "session_id": self.session_id,
+            "technical_score": self.technical_score,
+            "communication_score": self.communication_score,
+            "problem_solving_score": self.problem_solving_score,
+            "cultural_fit_score": self.cultural_fit_score,
+            "total_score": self.total_score,
+            "performance_level": self.performance_level,
+            "strengths": self.strengths,
+            "weaknesses": self.weaknesses,
+            "suggestions": self.suggestions,
+            "detailed_report": self.detailed_report,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class DigitalHuman(Base):
+    """虚拟人形象表 - 存储独立的虚拟人形象库"""
+    __tablename__ = "digital_humans"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, unique=True, index=True)  # 形象名称（文件夹名）
+    display_name = Column(String(100), nullable=False)  # 显示名称
+    description = Column(String(500), nullable=True)   # 形象描述
+    gender = Column(String(20), nullable=True)  # 性别：male/female/other
+    style = Column(String(50), nullable=True)  # 风格：formal/casual/tech等
+
+    # 视频路径
+    video_idle = Column(String(500), nullable=True)    # 等待状态视频路径
+    video_speaking = Column(String(500), nullable=True)  # 说话状态视频路径
+    video_listening = Column(String(500), nullable=True)  # 倾听状态视频路径
+    video_thinking = Column(String(500), nullable=True)  # 思考状态视频路径
+
+    # 状态
+    is_active = Column(Boolean, default=True)          # 是否启用
+    is_default = Column(Boolean, default=False)        # 是否为默认形象
+
+    # 时间戳
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "display_name": self.display_name,
+            "description": self.description,
+            "gender": self.gender,
+            "style": self.style,
+            "video_idle": self.video_idle,
+            "video_speaking": self.video_speaking,
+            "video_listening": self.video_listening,
+            "video_thinking": self.video_thinking,
+            "is_active": self.is_active,
+            "is_default": self.is_default,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
+class InterviewExperienceSet(Base):
+    """面经集 - 管理上传的面经文件"""
+    __tablename__ = "interview_experience_set"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)           # 面经集名称
+    description = Column(Text, nullable=True)            # 描述
+    source_filename = Column(String(255), nullable=True) # 原始PDF文件名
+    company = Column(String(100), nullable=True)         # 目标公司（可选）
+    position = Column(String(100), nullable=True)        # 目标职位（可选）
+    interview_type = Column(String(50), nullable=True)   # 面试类型
+    question_count = Column(Integer, default=0)          # 问题数量
+    created_at = Column(DateTime, default=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+
+    # 关系
+    questions = relationship("InterviewKnowledge", back_populates="experience_set", cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "source_filename": self.source_filename,
+            "company": self.company,
+            "position": self.position,
+            "interview_type": self.interview_type,
+            "question_count": self.question_count,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "is_active": self.is_active,
+        }
+
+
+class InterviewKnowledge(Base):
+    """面试知识库表 - 存储面试题库和评估标准"""
+    __tablename__ = "interview_knowledge"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    interview_type = Column(String(50), nullable=False, index=True)
+    category = Column(String(100), nullable=True)
+    content = Column(Text, nullable=False)
+    difficulty_level = Column(String(20), nullable=True)
+    source_filename = Column(String(255), nullable=True)
+    embedding = Column(LargeBinary, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # 面经集关联字段
+    experience_set_id = Column(Integer, ForeignKey('interview_experience_set.id'), nullable=True)
+    question_text = Column(Text, nullable=True)          # 原始问题文本
+    reference_answer = Column(Text, nullable=True)       # 参考答案（如果有）
+    tags = Column(JSON, nullable=True)                   # 标签（如：高频、必考）
+
+    # 关系
+    experience_set = relationship("InterviewExperienceSet", back_populates="questions")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "interview_type": self.interview_type,
+            "category": self.category,
+            "content": self.content,
+            "difficulty_level": self.difficulty_level,
+            "source_filename": self.source_filename,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "experience_set_id": self.experience_set_id,
+            "question_text": self.question_text,
+            "reference_answer": self.reference_answer,
+            "tags": self.tags,
+        }
