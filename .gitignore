@@ -47,7 +47,6 @@ yarn-error.log*
 .gemini/
 logs/
 *.log
-backend/tests/reports/*.md
 
 
 # Windows

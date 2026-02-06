@@ -6,7 +6,7 @@ from typing import Dict, Any, Optional, List
 from sqlalchemy.orm import Session
 from datetime import datetime
 
-from backend.agents.interviewer_agent import InterviewerAgent
+from interviewer_agent import InterviewerAgent
 from backend.apps.digital_interviewer.services.evaluation_engine import InterviewEvaluationEngine
 from backend.apps.digital_interviewer.services.experience_service import ExperienceService
 from backend.models.db_models import (
