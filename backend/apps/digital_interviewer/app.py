@@ -40,6 +40,10 @@ os.makedirs(PROFILE_DIR, exist_ok=True)
 EXPERIENCE_DIR = os.path.join(UPLOAD_DIR, "experiences")
 os.makedirs(EXPERIENCE_DIR, exist_ok=True)
 
+# 简历文件上传目录
+RESUME_DIR = os.path.join(UPLOAD_DIR, "resumes")
+os.makedirs(RESUME_DIR, exist_ok=True)
+
 # 虚拟人形象目录（独立的虚拟人形象库）
 DIGITAL_HUMANS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "digital_humans")
 os.makedirs(DIGITAL_HUMANS_DIR, exist_ok=True)
@@ -1048,3 +1052,594 @@ async def delete_experience_set(
     if not success:
         raise HTTPException(status_code=404, detail="面经集不存在")
     return {"message": "删除成功"}
+
+
+# ==================== 简历管理API ====================
+
+@router.post("/resumes/upload")
+async def upload_resume(
+    file: UploadFile = File(...),
+    candidate_name: str = Form(None),
+    candidate_id: str = Form(None),
+    db: Session = Depends(get_digital_interviewer_db)
+):
+    """上传并解析简历"""
+    from loguru import logger
+    from backend.models.db_models import CandidateResume, ResumeAnalysis
+    from backend.apps.digital_interviewer.services.resume_parser import ResumeParser
+
+    try:
+        logger.info(f"📤 开始上传简历: {file.filename}")
+
+        # 检查文件格式
+        file_ext = file.filename.split('.')[-1].lower()
+        if file_ext not in ['pdf', 'docx', 'doc', 'jpg', 'jpeg', 'png']:
+            raise HTTPException(status_code=400, detail="不支持的文件格式")
+
+        # 保存文件
+        file_path = os.path.join(RESUME_DIR, f"{uuid.uuid4()}_{file.filename}")
+        content = await file.read()
+        with open(file_path, 'wb') as f:
+            f.write(content)
+
+        logger.info(f"💾 文件已保存: {file_path}")
+
+        # 解析简历
+        parser = ResumeParser()
+        parse_result = parser.parse_resume(file_path)
+
+        if not parse_result['success']:
+            raise HTTPException(status_code=400, detail=parse_result['error'])
+
+        # 创建简历记录
+        resume = CandidateResume(
+            candidate_id=candidate_id,
+            candidate_name=candidate_name,
+            file_path=file_path,
+            file_type=file_ext,
+            file_hash=parse_result['file_hash'],
+            parse_status='completed',
+            parsed_data=parse_result['structured_data']
+        )
+
+        # 评估简历质量
+        quality_result = parser.evaluate_quality(
+            parse_result['structured_data'],
+            parse_result['raw_text']
+        )
+        resume.quality_score = quality_result['quality_score']
+        resume.completeness_score = quality_result['completeness_score']
+        resume.professionalism_score = quality_result['professionalism_score']
+
+        db.add(resume)
+        db.flush()
+
+        # 创建分析记录
+        tags = parser.extract_tags(parse_result['structured_data'])
+        work_years = parser.calculate_work_years(parse_result['structured_data'])
+
+        analysis = ResumeAnalysis(
+            resume_id=resume.id,
+            contact_info=parse_result['structured_data'].get('contact'),
+            education=parse_result['structured_data'].get('education'),
+            work_experience=parse_result['structured_data'].get('work_experience'),
+            project_experience=parse_result['structured_data'].get('projects'),
+            skills=parse_result['structured_data'].get('skills'),
+            certifications=parse_result['structured_data'].get('certifications'),
+            total_work_years=work_years,
+            skill_tags=tags['skill_tags'],
+            industry_tags=tags['industry_tags'],
+            position_tags=tags['position_tags'],
+            quality_issues=quality_result['issues'],
+            improvement_suggestions=quality_result['suggestions'],
+            risk_flags=quality_result['risk_flags']
+        )
+
+        db.add(analysis)
+        db.commit()
+        db.refresh(resume)
+
+        logger.info(f"✅ 简历上传成功: ID={resume.id}")
+
+        return {
+            "message": "简历上传成功",
+            "resume_id": resume.id,
+            "resume": resume.to_dict(),
+            "quality_score": resume.quality_score
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"上传简历失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/resumes")
+async def list_resumes(
+    skip: int = 0,
+    limit: int = 20,
+    db: Session = Depends(get_digital_interviewer_db)
+):
+    """获取简历列表"""
+    from backend.models.db_models import CandidateResume
+
+    resumes = db.query(CandidateResume).offset(skip).limit(limit).all()
+    total = db.query(CandidateResume).count()
+
+    return {
+        "resumes": [resume.to_dict() for resume in resumes],
+        "total": total,
+        "skip": skip,
+        "limit": limit
+    }
+
+
+@router.get("/resumes/{resume_id}")
+async def get_resume(
+    resume_id: int,
+    db: Session = Depends(get_digital_interviewer_db)
+):
+    """获取简历详情"""
+    from backend.models.db_models import CandidateResume, ResumeAnalysis
+
+    resume = db.query(CandidateResume).filter(CandidateResume.id == resume_id).first()
+    if not resume:
+        raise HTTPException(status_code=404, detail="简历不存在")
+
+    analysis = db.query(ResumeAnalysis).filter(ResumeAnalysis.resume_id == resume_id).first()
+
+    return {
+        "resume": resume.to_dict(),
+        "analysis": analysis.to_dict() if analysis else None
+    }
+
+
+@router.delete("/resumes/{resume_id}")
+async def delete_resume(
+    resume_id: int,
+    db: Session = Depends(get_digital_interviewer_db)
+):
+    """删除简历"""
+    from backend.models.db_models import CandidateResume
+
+    resume = db.query(CandidateResume).filter(CandidateResume.id == resume_id).first()
+    if not resume:
+        raise HTTPException(status_code=404, detail="简历不存在")
+
+    # 删除文件
+    if os.path.exists(resume.file_path):
+        os.remove(resume.file_path)
+
+    db.delete(resume)
+    db.commit()
+
+    return {"message": "删除成功"}
+
+
+# ==================== 职位管理API ====================
+
+@router.post("/jobs")
+async def create_job(
+    title: str = Form(...),
+    department: str = Form(None),
+    requirements: str = Form(None),
+    skills_required: str = Form(None),
+    education_required: str = Form(None),
+    experience_years_min: int = Form(None),
+    job_type: str = Form(None),
+    db: Session = Depends(get_digital_interviewer_db)
+):
+    """创建职位"""
+    from backend.models.db_models import JobPosition
+    import json
+
+    try:
+        skills_list = json.loads(skills_required) if skills_required else []
+    except:
+        skills_list = []
+
+    job = JobPosition(
+        title=title,
+        department=department,
+        requirements=requirements,
+        skills_required=skills_list,
+        education_required=education_required,
+        experience_years_min=experience_years_min,
+        job_type=job_type,
+        is_active=True
+    )
+
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    return {"message": "职位创建成功", "job": job.to_dict()}
+
+
+@router.get("/jobs")
+async def list_jobs(
+    is_active: bool = None,
+    db: Session = Depends(get_digital_interviewer_db)
+):
+    """获取职位列表"""
+    from backend.models.db_models import JobPosition
+
+    query = db.query(JobPosition)
+    if is_active is not None:
+        query = query.filter(JobPosition.is_active == is_active)
+
+    jobs = query.all()
+    return {"jobs": [job.to_dict() for job in jobs]}
+
+
+# ==================== 简历匹配API ====================
+
+@router.post("/resumes/{resume_id}/match")
+async def match_resume_to_jobs(
+    resume_id: int,
+    job_ids: List[int] = None,
+    db: Session = Depends(get_digital_interviewer_db)
+):
+    """将简历与职位进行匹配"""
+    from backend.apps.digital_interviewer.services.resume_matcher import ResumeMatcher
+
+    try:
+        matcher = ResumeMatcher(db)
+        results = matcher.batch_match(resume_id, job_ids)
+
+        return {
+            "message": "匹配完成",
+            "resume_id": resume_id,
+            "matches": results
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== GDPR合规API ====================
+
+@router.get("/candidates/{candidate_id}/export")
+async def export_candidate_data(
+    candidate_id: str,
+    db: Session = Depends(get_digital_interviewer_db)
+):
+    """导出候选人的所有数据（GDPR合规）"""
+    from backend.models.db_models import (
+        CandidateResume, ResumeAnalysis, InterviewSession,
+        InterviewRound, InterviewEvaluation
+    )
+    import json
+
+    try:
+        # 收集所有相关数据
+        export_data = {
+            "candidate_id": candidate_id,
+            "export_time": datetime.utcnow().isoformat(),
+            "resumes": [],
+            "interviews": []
+        }
+
+        # 简历数据
+        resumes = db.query(CandidateResume).filter(
+            CandidateResume.candidate_id == candidate_id
+        ).all()
+
+        for resume in resumes:
+            resume_data = resume.to_dict()
+            analysis = db.query(ResumeAnalysis).filter(
+                ResumeAnalysis.resume_id == resume.id
+            ).first()
+            if analysis:
+                resume_data['analysis'] = analysis.to_dict()
+            export_data['resumes'].append(resume_data)
+
+        return JSONResponse(content=export_data)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/candidates/{candidate_id}/data")
+async def delete_candidate_data(
+    candidate_id: str,
+    db: Session = Depends(get_digital_interviewer_db)
+):
+    """删除候选人的所有数据（GDPR合规）"""
+    from backend.models.db_models import CandidateResume, InterviewSession
+
+    try:
+        # 删除简历（级联删除分析数据）
+        resumes = db.query(CandidateResume).filter(
+            CandidateResume.candidate_id == candidate_id
+        ).all()
+
+        deleted_count = 0
+        for resume in resumes:
+            # 删除文件
+            if os.path.exists(resume.file_path):
+                os.remove(resume.file_path)
+            db.delete(resume)
+            deleted_count += 1
+
+        # 删除面试会话（级联删除轮次和评估数据）
+        sessions = db.query(InterviewSession).filter(
+            InterviewSession.candidate_id == candidate_id
+        ).all()
+
+        for session in sessions:
+            db.delete(session)
+            deleted_count += 1
+
+        db.commit()
+
+        return {
+            "message": "候选人数据已删除",
+            "candidate_id": candidate_id,
+            "deleted_items": deleted_count
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== 评分模板管理API ====================
+
+@router.post("/scoring-templates")
+async def create_scoring_template(
+    name: str = Form(...),
+    description: str = Form(None),
+    job_type: str = Form(None),
+    technical_weight: int = Form(25),
+    communication_weight: int = Form(15),
+    problem_solving_weight: int = Form(20),
+    cultural_fit_weight: int = Form(10),
+    innovation_weight: int = Form(10),
+    teamwork_weight: int = Form(10),
+    stress_handling_weight: int = Form(5),
+    learning_ability_weight: int = Form(5),
+    db: Session = Depends(get_digital_interviewer_db)
+):
+    """创建评分模板"""
+    from backend.models.db_models import ScoringTemplate
+
+    # 验证权重总和
+    total_weight = (technical_weight + communication_weight + problem_solving_weight +
+                   cultural_fit_weight + innovation_weight + teamwork_weight +
+                   stress_handling_weight + learning_ability_weight)
+
+    if total_weight != 100:
+        raise HTTPException(status_code=400, detail=f"权重总和必须为100，当前为{total_weight}")
+
+    template = ScoringTemplate(
+        name=name,
+        description=description,
+        job_type=job_type,
+        technical_weight=technical_weight,
+        communication_weight=communication_weight,
+        problem_solving_weight=problem_solving_weight,
+        cultural_fit_weight=cultural_fit_weight,
+        innovation_weight=innovation_weight,
+        teamwork_weight=teamwork_weight,
+        stress_handling_weight=stress_handling_weight,
+        learning_ability_weight=learning_ability_weight
+    )
+
+    db.add(template)
+    db.commit()
+    db.refresh(template)
+
+    return {"message": "评分模板创建成功", "template": template.to_dict()}
+
+
+@router.get("/scoring-templates")
+async def list_scoring_templates(
+    job_type: str = None,
+    db: Session = Depends(get_digital_interviewer_db)
+):
+    """获取评分模板列表"""
+    from backend.models.db_models import ScoringTemplate
+
+    query = db.query(ScoringTemplate).filter(ScoringTemplate.is_active == True)
+    if job_type:
+        query = query.filter(ScoringTemplate.job_type == job_type)
+
+    templates = query.all()
+    return {"templates": [t.to_dict() for t in templates]}
+
+
+# ==================== 面试模板管理API ====================
+
+@router.post("/interview-templates")
+async def create_interview_template(
+    name: str = Form(...),
+    description: str = Form(None),
+    job_type: str = Form(None),
+    max_rounds: int = Form(5),
+    difficulty_level: str = Form("medium"),
+    experience_set_ids: str = Form(None),
+    scoring_template_id: int = Form(None),
+    db: Session = Depends(get_digital_interviewer_db)
+):
+    """创建面试模板"""
+    from backend.models.db_models import InterviewTemplate
+    import json
+
+    try:
+        exp_ids = json.loads(experience_set_ids) if experience_set_ids else []
+    except:
+        exp_ids = []
+
+    template = InterviewTemplate(
+        name=name,
+        description=description,
+        job_type=job_type,
+        max_rounds=max_rounds,
+        difficulty_level=difficulty_level,
+        experience_set_ids=exp_ids,
+        scoring_template_id=scoring_template_id
+    )
+
+    db.add(template)
+    db.commit()
+    db.refresh(template)
+
+    return {"message": "面试模板创建成功", "template": template.to_dict()}
+
+
+# ==================== 候选人管理API ====================
+
+@router.post("/candidates/batch-import")
+async def batch_import_candidates(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_digital_interviewer_db)
+):
+    """批量导入候选人（Excel/CSV）"""
+    from backend.models.db_models import Candidate
+    import pandas as pd
+    import uuid
+    import io
+
+    try:
+        # 检查文件格式
+        file_ext = file.filename.split('.')[-1].lower()
+        if file_ext not in ['xlsx', 'xls', 'csv']:
+            raise HTTPException(status_code=400, detail="仅支持Excel或CSV格式")
+
+        # 读取文件
+        content = await file.read()
+        if file_ext == 'csv':
+            df = pd.read_csv(io.BytesIO(content))
+        else:
+            df = pd.read_excel(io.BytesIO(content))
+
+        # 验证必需列
+        required_columns = ['姓名']
+        for col in required_columns:
+            if col not in df.columns:
+                raise HTTPException(status_code=400, detail=f"缺少必需列: {col}")
+
+        success_count = 0
+        failed_count = 0
+        errors = []
+
+        for index, row in df.iterrows():
+            try:
+                candidate = Candidate(
+                    candidate_id=str(uuid.uuid4()),
+                    name=str(row['姓名']),
+                    email=str(row.get('邮箱', '')),
+                    phone=str(row.get('电话', '')),
+                    position=str(row.get('职位', '')),
+                    source='batch_import'
+                )
+                db.add(candidate)
+                success_count += 1
+            except Exception as e:
+                failed_count += 1
+                errors.append(f"第{index+2}行: {str(e)}")
+
+        db.commit()
+
+        return {
+            "message": "批量导入完成",
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "errors": errors[:10]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/interviews/export")
+async def export_interviews(
+    start_date: str = None,
+    end_date: str = None,
+    db: Session = Depends(get_digital_interviewer_db)
+):
+    """导出面试结果为Excel"""
+    from backend.models.db_models import InterviewSession, InterviewEvaluation
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment
+    import io
+    from datetime import datetime
+
+    try:
+        # 查询面试会话
+        query = db.query(InterviewSession).filter(InterviewSession.status == "completed")
+
+        if start_date:
+            query = query.filter(InterviewSession.created_at >= start_date)
+        if end_date:
+            query = query.filter(InterviewSession.created_at <= end_date)
+
+        sessions = query.all()
+
+        # 创建Excel工作簿
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "面试结果"
+
+        # 设置表头
+        headers = [
+            "会话ID", "候选人姓名", "面试类型", "面试官",
+            "开始时间", "完成时间", "总轮数", "状态",
+            "技术能力", "沟通表达", "问题解决", "文化匹配",
+            "创新能力", "团队协作", "压力应对", "学习能力", "总分"
+        ]
+
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = Font(bold=True)
+            cell.alignment = Alignment(horizontal='center')
+
+        # 填充数据
+        for row_idx, session in enumerate(sessions, 2):
+            evaluation = db.query(InterviewEvaluation).filter(
+                InterviewEvaluation.session_id == session.id
+            ).first()
+
+            ws.cell(row=row_idx, column=1, value=session.session_id)
+            ws.cell(row=row_idx, column=2, value=session.candidate_name or "")
+            ws.cell(row=row_idx, column=3, value=session.interview_type)
+            ws.cell(row=row_idx, column=4, value=session.interviewer_name or "")
+            ws.cell(row=row_idx, column=5, value=session.started_at.strftime("%Y-%m-%d %H:%M") if session.started_at else "")
+            ws.cell(row=row_idx, column=6, value=session.completed_at.strftime("%Y-%m-%d %H:%M") if session.completed_at else "")
+            ws.cell(row=row_idx, column=7, value=session.total_rounds)
+            ws.cell(row=row_idx, column=8, value=session.status)
+
+            if evaluation:
+                ws.cell(row=row_idx, column=9, value=evaluation.technical_score or 0)
+                ws.cell(row=row_idx, column=10, value=evaluation.communication_score or 0)
+                ws.cell(row=row_idx, column=11, value=evaluation.problem_solving_score or 0)
+                ws.cell(row=row_idx, column=12, value=evaluation.cultural_fit_score or 0)
+                ws.cell(row=row_idx, column=13, value=evaluation.innovation_score or 0)
+                ws.cell(row=row_idx, column=14, value=evaluation.teamwork_score or 0)
+                ws.cell(row=row_idx, column=15, value=evaluation.stress_handling_score or 0)
+                ws.cell(row=row_idx, column=16, value=evaluation.learning_ability_score or 0)
+                ws.cell(row=row_idx, column=17, value=evaluation.total_score or 0)
+
+        # 保存到内存
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        # 返回文件
+        from fastapi.responses import StreamingResponse
+        filename = f"interview_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

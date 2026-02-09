@@ -16,6 +16,7 @@ class InterviewerAgent:
         interview_type: str = "technical",
         reference_questions: List[Dict] = None,
         experience_mode: str = "none",  # none/reference/strict/mixed
+        resume_data: Dict[str, Any] = None,  # 新增：简历数据
         api_key: str = None,
         base_url: str = None
     ):
@@ -27,6 +28,7 @@ class InterviewerAgent:
             interview_type: 面试类型 (technical/hr/behavioral)
             reference_questions: 参考问题列表（来自面经）
             experience_mode: 面经使用模式
+            resume_data: 候选人简历数据
             api_key: API密钥
             base_url: API基础URL
         """
@@ -38,6 +40,13 @@ class InterviewerAgent:
         self.reference_questions = reference_questions or []
         self.experience_mode = experience_mode
         self.used_question_indices = []  # 已使用的问题索引
+
+        # 简历相关
+        self.resume_data = resume_data or {}
+
+        # 难度调整相关
+        self.current_difficulty = "medium"  # 初始难度：easy/medium/hard
+        self.performance_history = []  # 记录表现历史
 
         # 初始化OpenAI客户端
         self.client = AsyncOpenAI(
@@ -184,12 +193,29 @@ class InterviewerAgent:
         context: Optional[Dict[str, Any]] = None
     ) -> str:
         """构建动态问题生成提示词（原有逻辑）"""
+        # 构建简历上下文
+        resume_context = ""
+        if self.resume_data:
+            resume_context = self._format_resume_context()
+
+        # 构建难度提示
+        difficulty_hint = f"\n\n当前问题难度级别：{self.current_difficulty}。请根据此难度级别提出相应的问题。"
+
         if round_number == 1:
             prompt = f"这是面试的第一个问题，请提出一个{self.interview_type}类型的开场问题。"
+            if resume_context:
+                prompt += f"\n\n{resume_context}"
+            prompt += difficulty_hint
         elif previous_answer:
             prompt = f"候选人刚才的回答是：{previous_answer}\n\n请根据回答决定是追问还是进入下一个问题。"
+            if resume_context:
+                prompt += f"\n\n{resume_context}"
+            prompt += difficulty_hint
         else:
             prompt = f"请提出第{round_number}个面试问题。"
+            if resume_context:
+                prompt += f"\n\n{resume_context}"
+            prompt += difficulty_hint
 
         if context and context.get('suggested_questions'):
             prompt += f"\n\n参考问题：{context['suggested_questions']}"
@@ -258,3 +284,69 @@ class InterviewerAgent:
             return 'behavioral'
         else:
             return 'general'
+
+    def _format_resume_context(self) -> str:
+        """格式化简历上下文信息"""
+        if not self.resume_data:
+            return ""
+
+        context_parts = ["候选人简历信息："]
+
+        # 工作经验
+        if self.resume_data.get('work_experience'):
+            context_parts.append("\n工作经历：")
+            for exp in self.resume_data['work_experience'][:3]:  # 只取前3条
+                company = exp.get('company', '未知公司')
+                position = exp.get('position', '未知职位')
+                context_parts.append(f"- {company} - {position}")
+
+        # 技能
+        if self.resume_data.get('skills'):
+            skills = self.resume_data['skills'][:10]  # 只取前10个技能
+            context_parts.append(f"\n技能：{', '.join(skills)}")
+
+        # 项目经验
+        if self.resume_data.get('projects'):
+            context_parts.append("\n项目经历：")
+            for proj in self.resume_data['projects'][:2]:  # 只取前2个项目
+                name = proj.get('name', '未知项目')
+                context_parts.append(f"- {name}")
+
+        context_parts.append("\n\n请根据候选人的简历信息，提出针对性的面试问题。")
+
+        return "\n".join(context_parts)
+
+    def adjust_difficulty(self, answer_quality: str) -> None:
+        """
+        根据回答质量调整问题难度
+
+        Args:
+            answer_quality: 回答质量 (excellent/good/fair/poor)
+        """
+        self.performance_history.append(answer_quality)
+
+        # 只保留最近3次表现
+        if len(self.performance_history) > 3:
+            self.performance_history = self.performance_history[-3:]
+
+        # 根据最近表现调整难度
+        if len(self.performance_history) >= 2:
+            recent = self.performance_history[-2:]
+
+            # 连续表现优秀，提高难度
+            if all(q in ['excellent', 'good'] for q in recent):
+                if self.current_difficulty == "easy":
+                    self.current_difficulty = "medium"
+                elif self.current_difficulty == "medium":
+                    self.current_difficulty = "hard"
+
+            # 连续表现不佳，降低难度
+            elif all(q in ['poor', 'fair'] for q in recent):
+                if self.current_difficulty == "hard":
+                    self.current_difficulty = "medium"
+                elif self.current_difficulty == "medium":
+                    self.current_difficulty = "easy"
+
+    def get_current_difficulty(self) -> str:
+        """获取当前难度级别"""
+        return self.current_difficulty

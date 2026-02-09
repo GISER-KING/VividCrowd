@@ -46,6 +46,12 @@ import DigitalHumanPlayer from '../components/digital_interviewer/DigitalHumanPl
 import InterviewChat from '../components/digital_interviewer/InterviewChat';
 import InterviewFeedback from '../components/digital_interviewer/InterviewFeedback';
 import VoiceInterviewInput from '../components/digital_interviewer/VoiceInterviewInput';
+import InterviewProgress from '../components/digital_interviewer/InterviewProgress';
+import InterviewPreparationGuide from '../components/digital_interviewer/InterviewPreparationGuide';
+import RetryRecordButton from '../components/digital_interviewer/RetryRecordButton';
+import BatchImportCandidates from '../components/digital_interviewer/BatchImportCandidates';
+import ExportDataButton from '../components/digital_interviewer/ExportDataButton';
+import ResumeRiskAlert from '../components/digital_interviewer/ResumeRiskAlert';
 
 // 导入Hook
 import useInterviewWebSocket from '../hooks/useInterviewWebSocket';
@@ -73,7 +79,7 @@ const theme = {
 
 const DigitalInterviewerPage = () => {
   // Tab状态
-  const [activeTab, setActiveTab] = useState('list'); // 'list' | 'training' | 'history' | 'experience'
+  const [activeTab, setActiveTab] = useState('list'); // 'list' | 'training' | 'history' | 'experience' | 'candidates' | 'resumes'
 
   // 面试官列表
   const [interviewers, setInterviewers] = useState([]);
@@ -127,6 +133,27 @@ const DigitalInterviewerPage = () => {
 
   // 面试记录
   const [interviewHistory, setInterviewHistory] = useState([]);
+
+  // 准备指南状态
+  const [showPreparationGuide, setShowPreparationGuide] = useState(false);
+
+  // 面试进度状态
+  const [interviewProgress, setInterviewProgress] = useState({
+    currentRound: 0,
+    maxRounds: 5,
+    elapsedSeconds: 0,
+    status: 'pending'
+  });
+  const [interviewStartTime, setInterviewStartTime] = useState(null);
+
+  // 重录状态 - 记录每一轮的重录次数
+  const [retryCountByRound, setRetryCountByRound] = useState({});
+
+  // 简历管理状态
+  const [resumes, setResumes] = useState([]);
+  const [loadingResumes, setLoadingResumes] = useState(false);
+  const [uploadingResume, setUploadingResume] = useState(false);
+  const [selectedResume, setSelectedResume] = useState(null);
 
   // WebSocket集成
   const { connected, messages, sendMessage } = useInterviewWebSocket(sessionId);
@@ -337,6 +364,12 @@ const DigitalInterviewerPage = () => {
 
       newMessages.forEach(async (msg) => {
         if (msg.type === 'question') {
+          // 更新进度
+          setInterviewProgress(prev => ({
+            ...prev,
+            currentRound: msg.round_number || prev.currentRound
+          }));
+
           if (voiceMode) {
             // 语音模式：先预加载语音，然后同步显示文字和播放语音
             setCurrentVideoState('thinking'); // 显示思考状态
@@ -470,6 +503,32 @@ const DigitalInterviewerPage = () => {
     });
   };
 
+  // 处理重录
+  const handleRetry = (roundNumber) => {
+    const currentRetryCount = retryCountByRound[roundNumber] || 0;
+    if (currentRetryCount >= 2) {
+      alert('该问题已达到最大重录次数(2次)');
+      return;
+    }
+
+    // 更新重录次数
+    setRetryCountByRound(prev => ({
+      ...prev,
+      [roundNumber]: currentRetryCount + 1
+    }));
+
+    // 移除该轮的候选人回答
+    setChatMessages(prev =>
+      prev.filter(msg => !(msg.role === 'candidate' && msg.round === roundNumber))
+    );
+
+    // 发送重录请求到后端
+    sendMessage({
+      type: 'retry_answer',
+      round_number: roundNumber
+    });
+  };
+
   // 开始面试（发送开始信号）
   const handleBeginInterview = () => {
     if (connected) {
@@ -517,11 +576,61 @@ const DigitalInterviewerPage = () => {
     }
   };
 
+  // 获取简历列表
+  const fetchResumes = async () => {
+    setLoadingResumes(true);
+    try {
+      const response = await axios.get('/api/digital-interviewer/resumes');
+      setResumes(response.data.resumes || []);
+    } catch (error) {
+      console.error('获取简历列表失败:', error);
+    } finally {
+      setLoadingResumes(false);
+    }
+  };
+
+  // 上传简历
+  const handleUploadResume = async (file, candidateName) => {
+    setUploadingResume(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      if (candidateName) {
+        formData.append('candidate_name', candidateName);
+      }
+
+      const response = await axios.post('/api/digital-interviewer/resumes/upload', formData);
+      alert(`简历上传成功！质量评分: ${response.data.quality_score}/100`);
+      fetchResumes();
+    } catch (error) {
+      console.error('上传简历失败:', error);
+      alert('上传失败: ' + (error.response?.data?.detail || error.message));
+    } finally {
+      setUploadingResume(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'history') {
       fetchInterviewHistory();
+    } else if (activeTab === 'resumes') {
+      fetchResumes();
     }
   }, [activeTab]);
+
+  // 面试计时器
+  useEffect(() => {
+    if (interviewStarted && interviewStartTime && !interviewEnded) {
+      const timer = setInterval(() => {
+        const elapsed = Math.floor((new Date() - interviewStartTime) / 1000);
+        setInterviewProgress(prev => ({
+          ...prev,
+          elapsedSeconds: elapsed
+        }));
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [interviewStarted, interviewStartTime, interviewEnded]);
 
   // 启动候选人摄像头
   const startCamera = async () => {
@@ -713,6 +822,8 @@ const DigitalInterviewerPage = () => {
             <Tab icon={<MenuBookIcon />} iconPosition="start" label="面经库" value="experience" />
             <Tab icon={<BusinessCenterIcon />} iconPosition="start" label="面试训练" value="training" />
             <Tab icon={<HistoryIcon />} iconPosition="start" label="面试记录" value="history" />
+            <Tab icon={<CloudUploadIcon />} iconPosition="start" label="候选人管理" value="candidates" />
+            <Tab icon={<AssessmentIcon />} iconPosition="start" label="简历管理" value="resumes" />
           </Tabs>
         </Box>
 
@@ -873,7 +984,7 @@ const DigitalInterviewerPage = () => {
                   <Grid item xs={12} sm={6} md={3}>
                     <Button
                       fullWidth
-                      onClick={handleStartInterview}
+                      onClick={() => setShowPreparationGuide(true)}
                       disabled={isStarting || !selectedDigitalHuman}
                       sx={primaryBtn}
                     >
@@ -1193,7 +1304,19 @@ const DigitalInterviewerPage = () => {
                 </Typography>
               </Box>
             ) : (
-              <Grid container spacing={3}>
+              <>
+                {/* 进度显示 */}
+                {interviewStarted && (
+                  <Box sx={{ mb: 3 }}>
+                    <InterviewProgress
+                      currentRound={interviewProgress.currentRound}
+                      maxRounds={interviewProgress.maxRounds}
+                      elapsedSeconds={interviewProgress.elapsedSeconds}
+                      status={interviewProgress.status}
+                    />
+                  </Box>
+                )}
+                <Grid container spacing={3}>
                 {/* 左栏：数字人视频 */}
                 <Grid item xs={12} md={3}>
                   <Box sx={{ ...glassCard, p: 3, height: '620px', display: 'flex', flexDirection: 'column' }}>
@@ -1302,32 +1425,45 @@ const DigitalInterviewerPage = () => {
                         </Box>
                       ) : (
                         chatMessages.map((msg, index) => (
-                          <Box
-                            key={index}
-                            sx={{
-                              p: 2, mb: 2, maxWidth: '85%',
-                              ml: msg.role === 'interviewer' ? 0 : 'auto',
-                              mr: msg.role === 'interviewer' ? 'auto' : 0,
-                              background: msg.role === 'interviewer'
-                                ? 'rgba(0, 212, 255, 0.1)'
-                                : 'rgba(124, 58, 237, 0.1)',
-                              border: `1px solid ${msg.role === 'interviewer'
-                                ? 'rgba(0, 212, 255, 0.2)'
-                                : 'rgba(124, 58, 237, 0.2)'}`,
-                              borderRadius: msg.role === 'interviewer'
-                                ? '16px 16px 16px 4px'
-                                : '16px 16px 4px 16px',
-                            }}
-                          >
-                            <Typography sx={{
-                              color: msg.role === 'interviewer' ? theme.primary : theme.accent,
-                              fontSize: '0.75rem', fontWeight: 600, mb: 0.5,
-                            }}>
-                              {msg.role === 'interviewer' ? `面试官 · 第${msg.round}轮` : '我的回答'}
-                            </Typography>
-                            <Typography sx={{ color: theme.textPrimary, fontSize: '0.95rem', lineHeight: 1.6 }}>
-                              {msg.content}
-                            </Typography>
+                          <Box key={index}>
+                            <Box
+                              sx={{
+                                p: 2, mb: 1, maxWidth: '85%',
+                                ml: msg.role === 'interviewer' ? 0 : 'auto',
+                                mr: msg.role === 'interviewer' ? 'auto' : 0,
+                                background: msg.role === 'interviewer'
+                                  ? 'rgba(0, 212, 255, 0.1)'
+                                  : 'rgba(124, 58, 237, 0.1)',
+                                border: `1px solid ${msg.role === 'interviewer'
+                                  ? 'rgba(0, 212, 255, 0.2)'
+                                  : 'rgba(124, 58, 237, 0.2)'}`,
+                                borderRadius: msg.role === 'interviewer'
+                                  ? '16px 16px 16px 4px'
+                                  : '16px 16px 4px 16px',
+                              }}
+                            >
+                              <Typography sx={{
+                                color: msg.role === 'interviewer' ? theme.primary : theme.accent,
+                                fontSize: '0.75rem', fontWeight: 600, mb: 0.5,
+                              }}>
+                                {msg.role === 'interviewer' ? `面试官 · 第${msg.round}轮` : '我的回答'}
+                              </Typography>
+                              <Typography sx={{ color: theme.textPrimary, fontSize: '0.95rem', lineHeight: 1.6 }}>
+                                {msg.content}
+                              </Typography>
+                            </Box>
+                            {/* 在面试官问题后显示重录按钮 */}
+                            {msg.role === 'interviewer' && msg.round && (
+                              <Box sx={{ mb: 2, ml: 0, maxWidth: '85%' }}>
+                                <RetryRecordButton
+                                  roundNumber={msg.round}
+                                  retryCount={retryCountByRound[msg.round] || 0}
+                                  maxRetries={2}
+                                  onRetry={handleRetry}
+                                  disabled={interviewEnded || !connected}
+                                />
+                              </Box>
+                            )}
                           </Box>
                         ))
                       )}
@@ -1491,16 +1627,141 @@ const DigitalInterviewerPage = () => {
                   </Box>
                 </Grid>
               </Grid>
+              </>
             )}
           </Box>
         )}
 
-        {/* Tab 3: 面试记录 */}
-        {activeTab === 'history' && (
+        {/* Tab 4: 候选人管理 */}
+        {activeTab === 'candidates' && (
           <Box sx={{ animation: 'fadeIn 0.5s ease' }}>
             <Typography sx={{ color: theme.textPrimary, fontSize: '1.2rem', fontWeight: 600, mb: 3 }}>
-              面试记录
+              候选人管理
             </Typography>
+            <Box sx={{ ...glassCard, p: 3 }}>
+              <BatchImportCandidates />
+            </Box>
+          </Box>
+        )}
+
+        {/* Tab 6: 简历管理 */}
+        {activeTab === 'resumes' && (
+          <Box sx={{ animation: 'fadeIn 0.5s ease' }}>
+            <Typography sx={{ color: theme.textPrimary, fontSize: '1.2rem', fontWeight: 600, mb: 3 }}>
+              简历管理
+            </Typography>
+
+            {/* 上传简历区域 */}
+            <Box sx={{ ...glassCard, p: 3, mb: 4 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+                <CloudUploadIcon sx={{ color: theme.primary, fontSize: 28 }} />
+                <Typography sx={{ color: theme.textPrimary, fontSize: '1.1rem', fontWeight: 600 }}>
+                  上传简历
+                </Typography>
+              </Box>
+              <Grid container spacing={2} alignItems="center">
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="候选人姓名（可选）"
+                    sx={inputStyle}
+                    id="resume-candidate-name"
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <Button
+                    component="label"
+                    fullWidth
+                    disabled={uploadingResume}
+                    sx={{
+                      ...primaryBtn,
+                      height: '56px',
+                    }}
+                  >
+                    {uploadingResume ? (
+                      <CircularProgress size={24} sx={{ color: '#fff' }} />
+                    ) : (
+                      <>
+                        <CloudUploadIcon sx={{ mr: 1 }} />
+                        选择简历文件
+                      </>
+                    )}
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                      hidden
+                      onChange={(e) => {
+                        if (e.target.files[0]) {
+                          const candidateName = document.getElementById('resume-candidate-name')?.value;
+                          handleUploadResume(e.target.files[0], candidateName);
+                        }
+                      }}
+                    />
+                  </Button>
+                </Grid>
+              </Grid>
+            </Box>
+
+            {/* 简历列表 */}
+            <Typography sx={{ color: theme.textPrimary, fontSize: '1.2rem', fontWeight: 600, mb: 3 }}>
+              简历列表
+            </Typography>
+            {loadingResumes ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
+                <CircularProgress sx={{ color: theme.primary }} />
+              </Box>
+            ) : resumes.length === 0 ? (
+              <Box sx={{ ...glassCard, p: 4, textAlign: 'center' }}>
+                <Typography sx={{ color: theme.textSecondary }}>
+                  暂无简历，请上传简历文件
+                </Typography>
+              </Box>
+            ) : (
+              <Grid container spacing={3}>
+                {resumes.map((resume) => (
+                  <Grid item xs={12} sm={6} md={4} key={resume.id}>
+                    <Box
+                      onClick={() => setSelectedResume(resume)}
+                      sx={{
+                        ...(selectedResume?.id === resume.id ? glowCard : glassCard),
+                        p: 3,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <Typography sx={{ color: theme.textPrimary, fontWeight: 600, fontSize: '1.1rem', mb: 1 }}>
+                        {resume.candidate_name || '未命名'}
+                      </Typography>
+                      <Typography sx={{ color: theme.textSecondary, fontSize: '0.9rem', mb: 0.5 }}>
+                        质量评分: {resume.quality_score}/100
+                      </Typography>
+                      <Typography sx={{ color: theme.textMuted, fontSize: '0.85rem' }}>
+                        上传时间: {new Date(resume.uploaded_at).toLocaleString()}
+                      </Typography>
+                      {resume.analysis && resume.analysis.risks && resume.analysis.risks.length > 0 && (
+                        <Box sx={{ mt: 2 }}>
+                          <ResumeRiskAlert
+                            risks={resume.analysis.risks}
+                            qualityScore={resume.quality_score}
+                          />
+                        </Box>
+                      )}
+                    </Box>
+                  </Grid>
+                ))}
+              </Grid>
+            )}
+          </Box>
+        )}
+
+        {/* Tab 7: 面试记录 */}
+        {activeTab === 'history' && (
+          <Box sx={{ animation: 'fadeIn 0.5s ease' }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+              <Typography sx={{ color: theme.textPrimary, fontSize: '1.2rem', fontWeight: 600 }}>
+                面试记录
+              </Typography>
+              <ExportDataButton />
+            </Box>
             {interviewHistory.length === 0 ? (
               <Box sx={{ ...glassCard, p: 4, textAlign: 'center' }}>
                 <Typography sx={{ color: theme.textSecondary }}>暂无面试记录</Typography>
@@ -1578,6 +1839,69 @@ const DigitalInterviewerPage = () => {
           animation: dots 1.5s steps(4, end) infinite;
         }
       `}</style>
+
+      {/* 准备指南对话框 */}
+      <Dialog
+        open={showPreparationGuide}
+        onClose={() => setShowPreparationGuide(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            background: theme.bgCard,
+            backdropFilter: 'blur(20px)',
+            border: `1px solid ${theme.border}`,
+            borderRadius: '16px',
+          }
+        }}
+      >
+        <InterviewPreparationGuide
+          onComplete={async () => {
+            setShowPreparationGuide(false);
+            setIsStarting(true);
+            try {
+              const formData = new FormData();
+              formData.append('interviewer_id', selectedInterviewer.id);
+              formData.append('interview_type', interviewType);
+              formData.append('candidate_name', candidateName);
+              formData.append('digital_human_id', selectedDigitalHuman.id);
+              formData.append('experience_set_ids', JSON.stringify(selectedExperienceSets));
+              formData.append('experience_mode', experienceMode);
+              formData.append('max_rounds', maxRounds);
+
+              const response = await axios.post(
+                '/api/digital-interviewer/sessions/start',
+                formData
+              );
+
+              setSessionId(response.data.session_id);
+              setInterviewStartTime(new Date());
+              setInterviewProgress({
+                currentRound: 0,
+                maxRounds: maxRounds,
+                elapsedSeconds: 0,
+                status: 'in_progress'
+              });
+
+              if (response.data.digital_human_videos) {
+                setDigitalHumanVideos(response.data.digital_human_videos);
+              }
+
+              setActiveTab('training');
+              setChatMessages([]);
+              setCurrentEvaluation(null);
+              setInterviewEnded(false);
+              setInterviewStarted(false);
+              processedMsgCountRef.current = 0;
+            } catch (error) {
+              console.error('开始面试失败:', error);
+              alert('开始面试失败: ' + (error.response?.data?.detail || error.message));
+            } finally {
+              setIsStarting(false);
+            }
+          }}
+        />
+      </Dialog>
 
       {/* 查看问题对话框 */}
       <Dialog

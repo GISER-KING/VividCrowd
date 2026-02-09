@@ -704,6 +704,7 @@ class InterviewSession(Base):
     candidate_name = Column(String(100), nullable=True)
     interviewer_profile_id = Column(Integer, ForeignKey("interviewer_profiles.id"), nullable=False)
     digital_human_id = Column(Integer, ForeignKey("digital_humans.id"), nullable=True)  # 使用的虚拟人形象
+    resume_id = Column(Integer, ForeignKey("candidate_resumes.id"), nullable=True)  # 关联的简历ID
 
     # 冗余字段
     interviewer_name = Column(String(100), nullable=True)
@@ -713,6 +714,7 @@ class InterviewSession(Base):
     interview_type = Column(String(50), nullable=False)  # technical/hr/behavioral
     difficulty_level = Column(String(20), nullable=True)  # easy/medium/hard
     max_rounds = Column(Integer, default=5)  # 最大面试轮数，默认5轮
+    scoring_template_id = Column(Integer, ForeignKey("scoring_templates.id"), nullable=True)  # 评分模板ID
 
     # 会话状态
     current_round = Column(Integer, default=0)
@@ -731,6 +733,28 @@ class InterviewSession(Base):
     # 关系
     interviewer_profile = relationship("InterviewerProfile")
 
+    def get_progress_info(self):
+        """获取面试进度信息"""
+        from datetime import datetime
+
+        progress = {
+            "current_round": self.current_round,
+            "max_rounds": self.max_rounds,
+            "progress_percentage": int((self.current_round / self.max_rounds) * 100) if self.max_rounds > 0 else 0,
+            "elapsed_seconds": 0,
+            "status": self.status
+        }
+
+        # 计算已用时间
+        if self.started_at:
+            if self.completed_at:
+                elapsed = (self.completed_at - self.started_at).total_seconds()
+            else:
+                elapsed = (datetime.utcnow() - self.started_at).total_seconds()
+            progress["elapsed_seconds"] = int(elapsed)
+
+        return progress
+
     def to_dict(self):
         return {
             "id": self.id,
@@ -740,9 +764,11 @@ class InterviewSession(Base):
             "interviewer_profile_id": self.interviewer_profile_id,
             "interviewer_name": self.interviewer_name,
             "interviewer_title": self.interviewer_title,
+            "resume_id": self.resume_id,
             "interview_type": self.interview_type,
             "difficulty_level": self.difficulty_level,
             "max_rounds": self.max_rounds,
+            "scoring_template_id": self.scoring_template_id,
             "current_round": self.current_round,
             "total_rounds": self.total_rounds,
             "status": self.status,
@@ -770,6 +796,10 @@ class InterviewRound(Base):
     # 问题元数据
     question_type = Column(String(50), nullable=True)
     is_followup = Column(Boolean, default=False)
+
+    # 重录相关
+    retry_count = Column(Integer, default=0)  # 重录次数
+    retry_history = Column(JSON, nullable=True)  # 重录历史记录
 
     # 实时评估
     answer_quality = Column(String(50), nullable=True)
@@ -802,11 +832,15 @@ class InterviewEvaluation(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     session_id = Column(Integer, ForeignKey("interview_sessions.id"), unique=True, nullable=False)
 
-    # 多维度评分
-    technical_score = Column(Integer, nullable=True)
-    communication_score = Column(Integer, nullable=True)
-    problem_solving_score = Column(Integer, nullable=True)
-    cultural_fit_score = Column(Integer, nullable=True)
+    # 多维度评分（扩展到8个维度）
+    technical_score = Column(Integer, nullable=True)  # 技术能力
+    communication_score = Column(Integer, nullable=True)  # 沟通表达
+    problem_solving_score = Column(Integer, nullable=True)  # 问题解决
+    cultural_fit_score = Column(Integer, nullable=True)  # 文化匹配
+    innovation_score = Column(Integer, nullable=True)  # 创新能力
+    teamwork_score = Column(Integer, nullable=True)  # 团队协作
+    stress_handling_score = Column(Integer, nullable=True)  # 压力应对
+    learning_ability_score = Column(Integer, nullable=True)  # 学习能力
 
     # 总分和等级
     total_score = Column(Integer, nullable=True)
@@ -833,6 +867,10 @@ class InterviewEvaluation(Base):
             "communication_score": self.communication_score,
             "problem_solving_score": self.problem_solving_score,
             "cultural_fit_score": self.cultural_fit_score,
+            "innovation_score": self.innovation_score,
+            "teamwork_score": self.teamwork_score,
+            "stress_handling_score": self.stress_handling_score,
+            "learning_ability_score": self.learning_ability_score,
             "total_score": self.total_score,
             "performance_level": self.performance_level,
             "strengths": self.strengths,
@@ -955,4 +993,342 @@ class InterviewKnowledge(Base):
             "question_text": self.question_text,
             "reference_answer": self.reference_answer,
             "tags": self.tags,
+        }
+
+
+# ==================== 简历分析模型 ====================
+
+class CandidateResume(Base):
+    """候选人简历表 - 存储简历文件和基本信息"""
+    __tablename__ = "candidate_resumes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    candidate_id = Column(String(100), nullable=True, index=True)  # 候选人ID
+    candidate_name = Column(String(100), nullable=True, index=True)  # 候选人姓名
+
+    # 文件信息
+    file_path = Column(String(500), nullable=False)  # 简历文件路径
+    file_type = Column(String(20), nullable=False)  # 文件类型：pdf/word/image
+    file_hash = Column(String(64), nullable=True)  # 文件哈希值，用于去重
+
+    # 解析状态
+    parse_status = Column(String(20), default="pending")  # pending/processing/completed/failed
+    parsed_data = Column(JSON, nullable=True)  # 解析后的结构化数据
+
+    # 质量评分
+    quality_score = Column(Integer, nullable=True)  # 简历质量评分 0-100
+    completeness_score = Column(Integer, nullable=True)  # 完整性评分
+    professionalism_score = Column(Integer, nullable=True)  # 专业性评分
+
+    # 时间戳
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # 关系
+    analysis = relationship("ResumeAnalysis", back_populates="resume", uselist=False, cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "candidate_id": self.candidate_id,
+            "candidate_name": self.candidate_name,
+            "file_path": self.file_path,
+            "file_type": self.file_type,
+            "parse_status": self.parse_status,
+            "parsed_data": self.parsed_data,
+            "quality_score": self.quality_score,
+            "completeness_score": self.completeness_score,
+            "professionalism_score": self.professionalism_score,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class ResumeAnalysis(Base):
+    """简历分析结果表 - 存储简历的详细分析结果"""
+    __tablename__ = "resume_analysis"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    resume_id = Column(Integer, ForeignKey("candidate_resumes.id", ondelete="CASCADE"), unique=True, nullable=False)
+
+    # 基本信息提取
+    contact_info = Column(JSON, nullable=True)  # 联系方式：电话、邮箱、地址
+    education = Column(JSON, nullable=True)  # 教育背景列表
+    work_experience = Column(JSON, nullable=True)  # 工作经历列表
+    project_experience = Column(JSON, nullable=True)  # 项目经历列表
+    skills = Column(JSON, nullable=True)  # 技能列表
+    certifications = Column(JSON, nullable=True)  # 证书列表
+
+    # 统计信息
+    total_work_years = Column(Float, nullable=True)  # 总工作年限
+    education_level = Column(String(50), nullable=True)  # 最高学历
+    major = Column(String(100), nullable=True)  # 专业
+
+    # 标签化
+    skill_tags = Column(JSON, nullable=True)  # 技能标签
+    industry_tags = Column(JSON, nullable=True)  # 行业标签
+    position_tags = Column(JSON, nullable=True)  # 职位标签
+
+    # 质量评估
+    quality_issues = Column(JSON, nullable=True)  # 质量问题列表
+    improvement_suggestions = Column(JSON, nullable=True)  # 改进建议
+    risk_flags = Column(JSON, nullable=True)  # 风险标记（时间断层、频繁跳槽等）
+
+    # 时间戳
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # 关系
+    resume = relationship("CandidateResume", back_populates="analysis")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "resume_id": self.resume_id,
+            "contact_info": self.contact_info,
+            "education": self.education,
+            "work_experience": self.work_experience,
+            "project_experience": self.project_experience,
+            "skills": self.skills,
+            "certifications": self.certifications,
+            "total_work_years": self.total_work_years,
+            "education_level": self.education_level,
+            "major": self.major,
+            "skill_tags": self.skill_tags,
+            "industry_tags": self.industry_tags,
+            "position_tags": self.position_tags,
+            "quality_issues": self.quality_issues,
+            "improvement_suggestions": self.improvement_suggestions,
+            "risk_flags": self.risk_flags,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class JobPosition(Base):
+    """职位信息表 - 存储招聘职位信息"""
+    __tablename__ = "job_positions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    title = Column(String(100), nullable=False, index=True)  # 职位名称
+    department = Column(String(100), nullable=True)  # 部门
+    company = Column(String(100), nullable=True)  # 公司名称
+
+    # 职位要求
+    requirements = Column(Text, nullable=True)  # 职位要求描述
+    skills_required = Column(JSON, nullable=True)  # 必需技能列表
+    skills_preferred = Column(JSON, nullable=True)  # 优选技能列表
+    education_required = Column(String(50), nullable=True)  # 学历要求
+    experience_years_min = Column(Integer, nullable=True)  # 最低工作年限
+    experience_years_max = Column(Integer, nullable=True)  # 最高工作年限
+
+    # 职位信息
+    job_type = Column(String(50), nullable=True)  # 职位类型：technical/hr/sales等
+    industry = Column(String(100), nullable=True)  # 行业
+    location = Column(String(100), nullable=True)  # 工作地点
+    salary_range = Column(String(100), nullable=True)  # 薪资范围
+
+    # 状态
+    is_active = Column(Boolean, default=True)  # 是否在招
+
+    # 时间戳
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "department": self.department,
+            "company": self.company,
+            "requirements": self.requirements,
+            "skills_required": self.skills_required,
+            "skills_preferred": self.skills_preferred,
+            "education_required": self.education_required,
+            "experience_years_min": self.experience_years_min,
+            "experience_years_max": self.experience_years_max,
+            "job_type": self.job_type,
+            "industry": self.industry,
+            "location": self.location,
+            "salary_range": self.salary_range,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class ResumeJobMatch(Base):
+    """简历职位匹配表 - 存储简历与职位的匹配结果"""
+    __tablename__ = "resume_job_matches"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    resume_id = Column(Integer, ForeignKey("candidate_resumes.id", ondelete="CASCADE"), nullable=False, index=True)
+    job_id = Column(Integer, ForeignKey("job_positions.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # 匹配度评分
+    match_score = Column(Integer, nullable=False)  # 综合匹配度 0-100
+    skill_match_score = Column(Integer, nullable=True)  # 技能匹配度
+    experience_match_score = Column(Integer, nullable=True)  # 经验匹配度
+    education_match_score = Column(Integer, nullable=True)  # 学历匹配度
+
+    # 匹配详情
+    matched_skills = Column(JSON, nullable=True)  # 匹配的技能列表
+    missing_skills = Column(JSON, nullable=True)  # 缺失的技能列表
+    match_details = Column(JSON, nullable=True)  # 详细匹配信息
+
+    # 优先级
+    priority = Column(String(20), nullable=True)  # 优先级：high/medium/low
+
+    # 建议
+    recommendations = Column(JSON, nullable=True)  # 匹配建议
+
+    # 时间戳
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "resume_id": self.resume_id,
+            "job_id": self.job_id,
+            "match_score": self.match_score,
+            "skill_match_score": self.skill_match_score,
+            "experience_match_score": self.experience_match_score,
+            "education_match_score": self.education_match_score,
+            "matched_skills": self.matched_skills,
+            "missing_skills": self.missing_skills,
+            "match_details": self.match_details,
+            "priority": self.priority,
+            "recommendations": self.recommendations,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+# ==================== 评分模板模型 ====================
+
+class ScoringTemplate(Base):
+    """评分模板表 - 存储不同岗位的评分权重配置"""
+    __tablename__ = "scoring_templates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    job_type = Column(String(50), nullable=True)
+
+    # 8个维度的权重（总和应为100）
+    technical_weight = Column(Integer, default=25)
+    communication_weight = Column(Integer, default=15)
+    problem_solving_weight = Column(Integer, default=20)
+    cultural_fit_weight = Column(Integer, default=10)
+    innovation_weight = Column(Integer, default=10)
+    teamwork_weight = Column(Integer, default=10)
+    stress_handling_weight = Column(Integer, default=5)
+    learning_ability_weight = Column(Integer, default=5)
+
+    # 状态
+    is_active = Column(Boolean, default=True)
+    is_default = Column(Boolean, default=False)
+
+    # 时间戳
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "job_type": self.job_type,
+            "weights": {
+                "technical": self.technical_weight,
+                "communication": self.communication_weight,
+                "problem_solving": self.problem_solving_weight,
+                "cultural_fit": self.cultural_fit_weight,
+                "innovation": self.innovation_weight,
+                "teamwork": self.teamwork_weight,
+                "stress_handling": self.stress_handling_weight,
+                "learning_ability": self.learning_ability_weight
+            },
+            "is_active": self.is_active,
+            "is_default": self.is_default,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+# ==================== 面试模板模型 ====================
+
+class InterviewTemplate(Base):
+    """面试模板表 - 存储不同岗位的面试模板配置"""
+    __tablename__ = "interview_templates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    job_type = Column(String(50), nullable=True)
+
+    # 面试配置
+    max_rounds = Column(Integer, default=5)
+    difficulty_level = Column(String(20), default="medium")
+
+    # 关联的面经集（JSON数组存储ID列表）
+    experience_set_ids = Column(JSON, nullable=True)
+
+    # 关联的评分模板
+    scoring_template_id = Column(Integer, ForeignKey("scoring_templates.id"), nullable=True)
+
+    # 状态
+    is_active = Column(Boolean, default=True)
+
+    # 时间戳
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'job_type': self.job_type,
+            'max_rounds': self.max_rounds,
+            'difficulty_level': self.difficulty_level,
+            'experience_set_ids': self.experience_set_ids,
+            'scoring_template_id': self.scoring_template_id,
+            'is_active': self.is_active,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+# ==================== 候选人管理模型 ====================
+
+class Candidate(Base):
+    """候选人信息表 - 存储候选人基本信息"""
+    __tablename__ = "candidates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    candidate_id = Column(String(100), unique=True, nullable=False, index=True)
+    name = Column(String(100), nullable=False, index=True)
+    email = Column(String(200), nullable=True)
+    phone = Column(String(50), nullable=True)
+    position = Column(String(100), nullable=True)
+    status = Column(String(20), default="active")
+    source = Column(String(50), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "candidate_id": self.candidate_id,
+            "name": self.name,
+            "email": self.email,
+            "phone": self.phone,
+            "position": self.position,
+            "status": self.status,
+            "source": self.source,
+            "notes": self.notes,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

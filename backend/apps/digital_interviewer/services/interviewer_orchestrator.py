@@ -66,6 +66,14 @@ class InterviewOrchestrator:
             experience_service = ExperienceService(db=self.db)
             reference_questions = experience_service.get_questions_by_sets(experience_set_ids)
 
+        # 获取简历数据（如果有关联简历）
+        resume_data = None
+        if session.resume_id:
+            from backend.models.db_models import CandidateResume
+            resume = self.db.query(CandidateResume).filter_by(id=session.resume_id).first()
+            if resume and resume.parsed_data:
+                resume_data = resume.parsed_data
+
         # 创建Agent实例
         profile_data = {
             "name": interviewer.name,
@@ -80,6 +88,7 @@ class InterviewOrchestrator:
             interview_type=session.interview_type,
             reference_questions=reference_questions,
             experience_mode=experience_mode,
+            resume_data=resume_data,
             api_key=self.api_key,
             base_url=self.base_url
         )
